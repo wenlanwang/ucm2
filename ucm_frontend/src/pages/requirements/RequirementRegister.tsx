@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Card, Button, message, Space, Tabs, DatePicker, Select, Upload, Modal, Table, Input, Tooltip, Tag } from 'antd';
 import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
+import EditableCell from '../../components/EditableCell';
 
 const { Option } = Select;
 const { Dragger } = Upload;
@@ -146,7 +147,7 @@ export default function RequirementRegister() {
     setUcmChangeDate(null);
   };
   
-  const handleAddRow = () => {
+  const handleAddRow = useCallback(() => {
     // 初始化所有列为空字符串
     const rowData: Record<string, string> = {};
     templateColumns.forEach(col => {
@@ -163,9 +164,9 @@ export default function RequirementRegister() {
       }
     };
     setTableData([...tableData, newRow]);
-  };
+  }, [templateColumns]);
   
-  const handleDeleteRow = (id: number) => {
+  const handleDeleteRow = useCallback((id: number) => {
     const row = tableData.find(r => r.id === id);
     Modal.confirm({
       title: '确认删除',
@@ -182,9 +183,9 @@ export default function RequirementRegister() {
         message.success('删除成功');
       }
     });
-  };
+  }, [tableData]);
   
-  const handleCopyRow = (id: number) => {
+  const handleCopyRow = useCallback((id: number) => {
     const row = tableData.find(r => r.id === id);
     if (row) {
       const newRow: RequirementRow = {
@@ -195,19 +196,20 @@ export default function RequirementRegister() {
       setTableData([...tableData, newRow]);
       message.success('复制成功');
     }
-  };
+  }, [tableData]);
   
-  const handleCellChange = (rowId: number, columnName: string, value: string) => {
-    const newData = tableData.map(row => {
-      if (row.id === rowId) {
-        const newData = { ...row.data, [columnName]: value };
-        const validation = validateRow(newData);
-        return { ...row, data: newData, validation };
-      }
-      return row;
+  const handleCellChange = useCallback((rowId: number, columnName: string, value: string) => {
+    setTableData(prevData => {
+      return prevData.map(row => {
+        if (row.id === rowId) {
+          const newData = { ...row.data, [columnName]: value };
+          const validation = validateRow(newData);
+          return { ...row, data: newData, validation };
+        }
+        return row;
+      });
     });
-    setTableData(newData);
-  };
+  }, []);
   
   const validateRow = (rowData: Record<string, string>): ValidationResult => {
     const errors: Record<string, string> = {};
@@ -578,43 +580,26 @@ export default function RequirementRegister() {
   };
   
   // 渲染可编辑单元格
-  const renderEditableCell = (row: RequirementRow, columnName: string) => {
+  const renderEditableCell = useCallback((row: RequirementRow, columnName: string) => {
     const value = row.data[columnName] || '';
     const hasError = row.validation.errors[columnName];
     const hasWarning = row.validation.warnings[columnName];
     const hasOptions = columnOptions[columnName] && columnOptions[columnName].length > 0;
     
-    const cellContent = hasOptions ? (
-      <Select
+    return (
+      <EditableCell
+        key={`${row.id}-${columnName}`}
         value={value}
-        onChange={(val) => handleCellChange(row.id, columnName, val)}
-        style={{ width: '100%' }}
-        allowClear
-      >
-        {columnOptions[columnName].map(opt => (
-          <Option key={opt} value={opt}>{opt}</Option>
-        ))}
-      </Select>
-    ) : (
-      <Input
-        value={value}
-        onChange={(e) => handleCellChange(row.id, columnName, e.target.value)}
+        onChange={(newValue) => handleCellChange(row.id, columnName, newValue)}
         placeholder={templateColumns.find(c => c.name === columnName)?.example}
+        hasOptions={hasOptions}
+        options={hasOptions ? columnOptions[columnName] : []}
+        hasError={!!hasError}
+        hasWarning={!!hasWarning}
+        errorMessage={hasError || hasWarning}
       />
     );
-    
-    if (hasError || hasWarning) {
-      return (
-        <Tooltip title={hasError || hasWarning}>
-          <div style={{ border: '1px solid #ff4d4f', borderRadius: '4px', padding: '4px' }}>
-            {cellContent}
-          </div>
-        </Tooltip>
-      );
-    }
-    
-    return cellContent;
-  };
+  }, [handleCellChange, templateColumns, columnOptions]);
   
   // 构建表格列
   const tableColumns = useMemo(() => {
@@ -655,7 +640,7 @@ export default function RequirementRegister() {
     
     // 添加模板列
     const templateCols = Array.isArray(templateColumns) ? templateColumns : [];
-    console.log('Template columns:', templateCols);
+    
     templateCols.forEach(col => {
       columns.push({
         title: (
