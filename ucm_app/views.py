@@ -382,26 +382,32 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                         row_validation['is_valid'] = False
                 
                 # 级联关系校验（设备类型→厂商→版本）
-                if col_name == '厂商' and value:
-                    device_type = row_data.get('设备类型')
-                    if device_type:
-                        valid_manufacturers = ManufacturerVersionInfo.objects.filter(
-                            device_type=device_type
-                        ).values_list('manufacturer', flat=True).distinct()
-                        if value not in valid_manufacturers:
-                            row_validation['warnings'][col_name] = '厂商与设备类型不匹配'
-                
-                elif col_name == '版本' and value:
-                    device_type = row_data.get('设备类型')
-                    manufacturer = row_data.get('厂商')
-                    if device_type and manufacturer:
-                        valid_versions = ManufacturerVersionInfo.objects.filter(
-                            device_type=device_type,
-                            manufacturer=manufacturer
-                        ).values_list('version', flat=True).distinct()
-                        if value not in valid_versions:
-                            row_validation['warnings'][col_name] = '版本与设备类型、厂商不匹配'
-            
+            device_type = row_data.get('设备类型', '').strip()
+            manufacturer = row_data.get('厂商', '').strip()
+            version = row_data.get('版本', '').strip()
+
+            # 规则：如果选择了设备类型，必须选择厂商
+            if device_type and not manufacturer:
+                row_validation['errors']['厂商'] = '请选择厂商'
+                row_validation['is_valid'] = False
+
+            # 规则：如果选择了厂商，必须选择版本
+            if manufacturer and not version:
+                row_validation['errors']['版本'] = '请选择版本'
+                row_validation['is_valid'] = False
+
+            # 规则：如果三者都填了，检查组合是否有效
+            if device_type and manufacturer and version:
+                is_valid_combination = ManufacturerVersionInfo.objects.filter(
+                    device_type=device_type,
+                    manufacturer=manufacturer,
+                    version=version
+                ).exists()
+
+                if not is_valid_combination:
+                    row_validation['errors']['版本'] = '设备类型、厂商、版本组合不匹配'
+                    row_validation['is_valid'] = False
+
             validation_results.append(row_validation)
         
         return Response({

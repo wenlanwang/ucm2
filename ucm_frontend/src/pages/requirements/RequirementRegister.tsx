@@ -45,6 +45,7 @@ export default function RequirementRegister() {
   const [tableData, setTableData] = useState<RequirementRow[]>([]);
   const [templateColumns, setTemplateColumns] = useState<ColumnDefinition[]>([]);
   const [columnOptions, setColumnOptions] = useState<Record<string, string[]>>({});
+  const [vendorVersionData, setVendorVersionData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isAllValid, setIsAllValid] = useState(false);
@@ -63,6 +64,7 @@ export default function RequirementRegister() {
     if (activeTab) {
       loadTemplateConfig();
       loadColumnOptions();
+      loadVendorVersionData();
     }
   }, [activeTab]);
   
@@ -166,7 +168,53 @@ export default function RequirementRegister() {
       console.error('加载列可选值失败:', error);
     }
   };
-  
+
+  const loadVendorVersionData = async () => {
+    try {
+      const response = await api.get('/manufacturers/');
+      setVendorVersionData(response.data.results || []);
+    } catch (error) {
+      console.error('加载厂商版本数据失败:', error);
+    }
+  };
+
+  const getDynamicColumnOptions = (columnName: string, rowData: Record<string, string>): string[] => {
+    if (columnName === '设备类型') {
+      // 返回所有唯一的设备类型
+      const uniqueDeviceTypes = [...new Set(
+        vendorVersionData.map(item => item.device_type)
+      )];
+      return uniqueDeviceTypes;
+    }
+
+    if (columnName === '厂商') {
+      const deviceType = rowData['设备类型'];
+      if (!deviceType) return [];
+
+      const uniqueVendors = [...new Set(
+        vendorVersionData
+          .filter(item => item.device_type === deviceType)
+          .map(item => item.manufacturer)
+      )];
+      return uniqueVendors;
+    }
+
+    if (columnName === '版本') {
+      const deviceType = rowData['设备类型'];
+      const manufacturer = rowData['厂商'];
+      if (!deviceType || !manufacturer) return [];
+
+      const uniqueVersions = [...new Set(
+        vendorVersionData
+          .filter(item => item.device_type === deviceType && item.manufacturer === manufacturer)
+          .map(item => item.version)
+      )];
+      return uniqueVersions;
+    }
+
+    return columnOptions[columnName] || [];
+  };
+
   const handleTabChange = (key: string) => {
     setActiveTab(key as 'import' | 'modify' | 'delete');
     setTableData([]);
@@ -249,29 +297,40 @@ export default function RequirementRegister() {
       return prevData.map(row => {
         if (row.id === rowId) {
           const newData = { ...row.data, [columnName]: value };
+
+          // 级联处理
+          if (columnName === '设备类型') {
+            // 重新选择设备类型，清空厂商和版本
+            newData['厂商'] = '';
+            newData['版本'] = '';
+          } else if (columnName === '厂商') {
+            // 重新选择厂商，清空版本
+            newData['版本'] = '';
+          }
+
           const validation = validateRow(newData);
           return { ...row, data: newData, validation };
         }
         return row;
       });
     });
-  }, []);
+  }, [vendorVersionData, columnOptions]);
   
   const validateRow = (rowData: Record<string, string>): ValidationResult => {
     const errors: Record<string, string> = {};
     const warnings: Record<string, string> = {};
-    
+
     // 确保templateColumns是数组
     const columns = Array.isArray(templateColumns) ? templateColumns : [];
-    
+
     columns.forEach(col => {
       const value = rowData[col.name]?.trim() || '';
-      
+
       // 必填字段校验
       if (col.required && !value) {
         errors[col.name] = '此字段为必填项';
       }
-      
+
       // IP地址格式校验
       if (col.name === 'IP' && value) {
         const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
@@ -279,7 +338,7 @@ export default function RequirementRegister() {
           errors[col.name] = 'IP地址格式不正确（IPv4）';
         }
       }
-      
+
       // 可选值校验
       if (columnOptions[col.name] && value) {
         if (!columnOptions[col.name].includes(value)) {
@@ -287,7 +346,35 @@ export default function RequirementRegister() {
         }
       }
     });
-    
+
+    // 级联校验：设备类型、厂商、版本
+    const deviceType = rowData['设备类型'];
+    const manufacturer = rowData['厂商'];
+    const version = rowData['版本'];
+
+    // 规则：如果选择了设备类型，必须选择厂商
+    if (deviceType && !manufacturer) {
+      errors['厂商'] = '请选择厂商';
+    }
+
+    // 规则：如果选择了厂商，必须选择版本
+    if (manufacturer && !version) {
+      errors['版本'] = '请选择版本';
+    }
+
+    // 规则：如果三者都填了，检查组合是否有效
+    if (deviceType && manufacturer && version) {
+      const isValidCombination = vendorVersionData.some(
+        item => item.device_type === deviceType &&
+                item.manufacturer === manufacturer &&
+                item.version === version
+      );
+
+      if (!isValidCombination) {
+        errors['版本'] = '设备类型、厂商、版本组合不匹配';
+      }
+    }
+
     return {
       is_valid: Object.keys(errors).length === 0,
       errors,
@@ -680,8 +767,11 @@ export default function RequirementRegister() {
     const value = row.data[columnName] || '';
     const hasError = row.validation.errors[columnName];
     const hasWarning = row.validation.warnings[columnName];
-    const hasOptions = columnOptions[columnName] && columnOptions[columnName].length > 0;
-    
+
+    // 使用动态可选值
+    const dynamicOptions = getDynamicColumnOptions(columnName, row.data);
+    const hasOptions = dynamicOptions.length > 0;
+
     return (
       <EditableCell
         key={`${row.id}-${columnName}`}
@@ -689,13 +779,13 @@ export default function RequirementRegister() {
         onChange={(newValue) => handleCellChange(row.id, columnName, newValue)}
         placeholder={templateColumns.find(c => c.name === columnName)?.example}
         hasOptions={hasOptions}
-        options={hasOptions ? columnOptions[columnName] : []}
+        options={dynamicOptions}
         hasError={!!hasError}
         hasWarning={!!hasWarning}
         errorMessage={hasError || hasWarning}
       />
     );
-  }, [handleCellChange, templateColumns, columnOptions]);
+  }, [handleCellChange, templateColumns, columnOptions, vendorVersionData]);
   
   // 构建表格列
   const tableColumns = useMemo(() => {
