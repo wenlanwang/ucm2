@@ -174,23 +174,43 @@ export default function RequirementRegister() {
   };
   
   const handleAddRow = useCallback(() => {
-    // 初始化所有列为空字符串
+    // 初始化所有列，对于只有一个可选值的列自动填充
     const rowData: Record<string, string> = {};
+    console.log('handleAddRow - templateColumns:', templateColumns);
+    console.log('handleAddRow - columnOptions:', columnOptions);
+
     templateColumns.forEach(col => {
-      rowData[col.name] = '';
+      // 检查该列是否有可选值配置
+      const options = columnOptions[col.name];
+      console.log(`列名: ${col.name}, 可选值:`, options);
+
+      // 如果该列只有一个可选值，自动填充
+      if (options && options.length === 1) {
+        rowData[col.name] = options[0];
+        console.log(`自动填充 ${col.name} = ${options[0]}`);
+      } else {
+        // 否则保持空值
+        rowData[col.name] = '';
+      }
     });
-    
+
+    console.log('最终填充的 rowData:', rowData);
+
+    // 自动填充后立即进行前端校验
+    const validation = validateRow(rowData);
+
     const newRow: RequirementRow = {
       id: nextRowId.current++,
       data: rowData,
-      validation: {
-        isValid: false,
-        errors: {},
-        warnings: {}
-      }
+      validation
     };
-    setTableData(prevData => [...prevData, newRow]);
-  }, [templateColumns]);
+    console.log('新增行数据:', newRow);
+    setTableData(prevData => {
+      const newData = [...prevData, newRow];
+      console.log('更新后的表格数据:', newData);
+      return newData;
+    });
+  }, [templateColumns, columnOptions]);
   
   const handleDeleteRow = useCallback((id: number) => {
     const row = tableData.find(r => r.id === id);
