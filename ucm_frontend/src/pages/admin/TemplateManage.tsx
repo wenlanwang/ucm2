@@ -1,20 +1,34 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Modal, Form, Input, Tag } from 'antd';
-import { EditOutlined } from '@ant-design/icons';
+import { Card, Table, Button, message, Space, Modal, Form, Input, Checkbox, Tag } from 'antd';
+import { EditOutlined, DeleteOutlined, UpOutlined, DownOutlined, PlusOutlined } from '@ant-design/icons';
 import api from '../../services/api';
+
+interface ColumnDefinition {
+  name: string;
+  required: boolean;
+  example: string;
+}
 
 interface TemplateConfig {
   id: number;
   template_type: 'import' | 'modify' | 'delete';
-  column_definitions: string[] | string;
+  column_definitions: ColumnDefinition[] | string;
+}
+
+interface ColumnEditForm {
+  name: string;
+  required: boolean;
+  example: string;
 }
 
 export default function TemplateManage() {
   const [data, setData] = useState<TemplateConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<TemplateConfig | null>(null);
-  const [form] = Form.useForm();
+  const [modalTitle, setModalTitle] = useState('');
+  const [editingTemplate, setEditingTemplate] = useState<TemplateConfig | null>(null);
+  const [editingColumnIndex, setEditingColumnIndex] = useState<number | null>(null);
+  const [form] = Form.useForm<ColumnEditForm>();
 
   useEffect(() => {
     loadData();
@@ -43,29 +57,43 @@ export default function TemplateManage() {
         return;
       }
       
-      // 处理column_definitions字段，确保它是数组
+      // 处理column_definitions字段，转换为对象数组
       const processedData = dataArray.map(item => {
         const processedItem = { ...item };
+        
         if (typeof processedItem.column_definitions === 'string') {
           try {
             const parsed = JSON.parse(processedItem.column_definitions);
             if (Array.isArray(parsed)) {
-              processedItem.column_definitions = parsed;
+              // 如果是新格式（对象数组）
+              if (parsed.length === 0 || typeof parsed[0] === 'object') {
+                processedItem.column_definitions = parsed;
+              } 
+              // 如果是旧格式（字符串数组），转换为新格式
+              else if (typeof parsed[0] === 'string') {
+                processedItem.column_definitions = parsed.map((col: string) => ({
+                  name: col,
+                  required: false,
+                  example: ''
+                }));
+              }
             } else {
-              // 如果是逗号分隔的字符串
-              processedItem.column_definitions = processedItem.column_definitions
-                .split(',')
-                .map((col: string) => col.trim())
-                .filter((col: string) => col);
+              processedItem.column_definitions = [];
             }
           } catch (e) {
-            // 如果是逗号分隔的字符串
-            processedItem.column_definitions = processedItem.column_definitions
+            // 如果是逗号分隔的字符串（旧格式）
+            const columns = processedItem.column_definitions
               .split(',')
               .map((col: string) => col.trim())
               .filter((col: string) => col);
+            processedItem.column_definitions = columns.map((col: string) => ({
+              name: col,
+              required: false,
+              example: ''
+            }));
           }
         }
+        
         return processedItem;
       });
       
@@ -78,119 +106,275 @@ export default function TemplateManage() {
     }
   };
 
-  const handleEdit = (record: TemplateConfig) => {
-    setEditingRecord(record);
+  const showAddColumnModal = (template: TemplateConfig) => {
+    setEditingTemplate(template);
+    setEditingColumnIndex(null);
+    setModalTitle(`添加列 - ${getTemplateTypeText(template.template_type)}`);
     form.setFieldsValue({
-      ...record,
-      column_definitions: record.column_definitions.join(',')
+      name: '',
+      required: false,
+      example: ''
     });
     setModalVisible(true);
   };
 
-  const handleSave = async () => {
+  const showEditColumnModal = (template: TemplateConfig, columnIndex: number) => {
+    const column = template.column_definitions[columnIndex] as ColumnDefinition;
+    setEditingTemplate(template);
+    setEditingColumnIndex(columnIndex);
+    setModalTitle(`编辑列 - ${column.name}`);
+    form.setFieldsValue({
+      name: column.name,
+      required: column.required,
+      example: column.example || ''
+    });
+    setModalVisible(true);
+  };
+
+  const handleSaveColumn = async () => {
     try {
       const values = await form.validateFields();
-      const columnDefinitions = values.column_definitions
-        .split(',')
-        .map((col: string) => col.trim())
-        .filter((col: string) => col);
-
-      if (editingRecord) {
-        await api.put(`/templates/${editingRecord.id}/`, {
-          ...values,
-          column_definitions: JSON.stringify(columnDefinitions)
-        });
-        message.success('修改成功');
+      
+      if (!editingTemplate) return;
+      
+      const templateIndex = data.findIndex(t => t.id === editingTemplate.id);
+      if (templateIndex === -1) return;
+      
+      const newData = [...data];
+      const columns = [...(newData[templateIndex].column_definitions as ColumnDefinition[])];
+      
+      if (editingColumnIndex === null) {
+        // 添加新列
+        columns.push(values);
+      } else {
+        // 编辑现有列
+        columns[editingColumnIndex] = values;
       }
       
+      newData[templateIndex].column_definitions = columns;
+      
+      // 保存到后端
+      await api.put(`/templates/${editingTemplate.id}/`, {
+        template_type: editingTemplate.template_type,
+        column_definitions: JSON.stringify(columns)
+      });
+      
+      setData(newData);
+      message.success(editingColumnIndex === null ? '添加成功' : '修改成功');
       setModalVisible(false);
-      loadData();
     } catch (error: any) {
+      if (error.errorFields) {
+        // 表单验证错误，不显示错误消息
+        return;
+      }
       message.error('保存失败');
     }
   };
 
-  const templateTypeText = {
-    import: '导入',
-    modify: '修改',
-    delete: '删除'
+  const handleMoveColumn = async (template: TemplateConfig, columnIndex: number, direction: 'up' | 'down') => {
+    const templateIndex = data.findIndex(t => t.id === template.id);
+    if (templateIndex === -1) return;
+    
+    const newData = [...data];
+    const columns = [...(newData[templateIndex].column_definitions as ColumnDefinition[])];
+    
+    if (direction === 'up' && columnIndex > 0) {
+      // 上移
+      [columns[columnIndex - 1], columns[columnIndex]] = [columns[columnIndex], columns[columnIndex - 1]];
+    } else if (direction === 'down' && columnIndex < columns.length - 1) {
+      // 下移
+      [columns[columnIndex], columns[columnIndex + 1]] = [columns[columnIndex + 1], columns[columnIndex]];
+    }
+    
+    newData[templateIndex].column_definitions = columns;
+    
+    try {
+      await api.put(`/templates/${template.id}/`, {
+        template_type: template.template_type,
+        column_definitions: JSON.stringify(columns)
+      });
+      
+      setData(newData);
+      message.success('移动成功');
+    } catch (error) {
+      message.error('移动失败');
+    }
   };
 
-  const columns = [
-    {
-      title: '模板类型',
-      dataIndex: 'template_type',
-      key: 'template_type',
-      width: 100,
-      render: (type: string) => templateTypeText[type as keyof typeof templateTypeText],
-    },
-    {
-      title: '列定义',
-      dataIndex: 'column_definitions',
-      key: 'column_definitions',
-      render: (columns: string[]) => (
-        <Space wrap>
-          {columns.map((col, idx) => (
-            <Tag key={idx} color="blue">{col}</Tag>
-          ))}
-        </Space>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 80,
-      render: (_: any, record: TemplateConfig) => (
-        <Button
-          size="small"
-          icon={<EditOutlined />}
-          onClick={() => handleEdit(record)}
-        />
-      ),
-    },
-  ];
+  const handleDeleteColumn = async (template: TemplateConfig, columnIndex: number) => {
+    const column = template.column_definitions[columnIndex] as ColumnDefinition;
+    
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除列 "${column.name}" 吗？`,
+      onOk: async () => {
+        const templateIndex = data.findIndex(t => t.id === template.id);
+        if (templateIndex === -1) return;
+        
+        const newData = [...data];
+        const columns = [...(newData[templateIndex].column_definitions as ColumnDefinition[])];
+        columns.splice(columnIndex, 1);
+        
+        newData[templateIndex].column_definitions = columns;
+        
+        try {
+          await api.put(`/templates/${template.id}/`, {
+            template_type: template.template_type,
+            column_definitions: JSON.stringify(columns)
+          });
+          
+          setData(newData);
+          message.success('删除成功');
+        } catch (error) {
+          message.error('删除失败');
+        }
+      }
+    });
+  };
+
+  const getTemplateTypeText = (type: string) => {
+    const typeMap = {
+      import: '导入',
+      modify: '修改',
+      delete: '删除'
+    };
+    return typeMap[type as keyof typeof typeMap] || type;
+  };
+
+  const renderColumnTable = (template: TemplateConfig) => {
+    const columns = template.column_definitions as ColumnDefinition[];
+    
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <strong>列配置</strong>
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={() => showAddColumnModal(template)}
+          >
+            添加列
+          </Button>
+        </div>
+        
+        <div style={{ border: '1px solid #d9d9d9', borderRadius: 4 }}>
+          {columns.length === 0 ? (
+            <div style={{ padding: 16, textAlign: 'center', color: '#999' }}>
+              暂无列配置，请点击"添加列"
+            </div>
+          ) : (
+            <div>
+              {columns.map((column, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    borderBottom: index < columns.length - 1 ? '1px solid #f0f0f0' : 'none'
+                  }}
+                >
+                  <span style={{ flex: 1, fontWeight: 500 }}>{column.name}</span>
+                  
+                  <Tag color={column.required ? 'error' : 'default'} style={{ marginRight: 16 }}>
+                    {column.required ? '必填' : '可选'}
+                  </Tag>
+                  
+                  {column.example && (
+                    <span style={{ color: '#999', marginRight: 16, fontSize: 12 }}>
+                      例: {column.example}
+                    </span>
+                  )}
+                  
+                  <Space>
+                    <Button
+                      size="small"
+                      icon={<UpOutlined />}
+                      disabled={index === 0}
+                      onClick={() => handleMoveColumn(template, index, 'up')}
+                    />
+                    <Button
+                      size="small"
+                      icon={<DownOutlined />}
+                      disabled={index === columns.length - 1}
+                      onClick={() => handleMoveColumn(template, index, 'down')}
+                    />
+                    <Button
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => showEditColumnModal(template, index)}
+                    />
+                    <Button
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      danger
+                      onClick={() => handleDeleteColumn(template, index)}
+                    />
+                  </Space>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>模板配置管理</h1>
       
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={data}
-          loading={loading}
-          rowKey="id"
-          pagination={false}
-        />
-      </Card>
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        {data.map(template => (
+          <Card
+            key={template.id}
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{getTemplateTypeText(template.template_type)}模板</span>
+                <Tag>{template.template_type}</Tag>
+              </div>
+            }
+            loading={loading}
+          >
+            {renderColumnTable(template)}
+          </Card>
+        ))}
+      </Space>
 
       <Modal
-        title="编辑模板配置"
+        title={modalTitle}
         open={modalVisible}
-        onOk={handleSave}
+        onOk={handleSaveColumn}
         onCancel={() => setModalVisible(false)}
-        width={600}
+        width={500}
       >
         <Form
           form={form}
           layout="vertical"
         >
           <Form.Item
-            name="template_type"
-            label="模板类型"
+            name="name"
+            label="列名"
+            rules={[{ required: true, message: '请输入列名' }]}
           >
-            <Input disabled />
+            <Input placeholder="例如：名称" />
           </Form.Item>
 
           <Form.Item
-            name="column_definitions"
-            label="列定义（用逗号分隔）"
-            rules={[{ required: true, message: '请输入列定义' }]}
+            name="required"
+            label="是否必填"
+            valuePropName="checked"
           >
-            <Input.TextArea 
-              rows={4}
-              placeholder="例如：名称,设备类型,厂商,版本,IP,其他IP,安装位置,分组,认证方式"
-            />
+            <Checkbox>是</Checkbox>
+          </Form.Item>
+
+          <Form.Item
+            name="example"
+            label="样例数据"
+            rules={[{ required: false }]}
+          >
+            <Input placeholder="例如：Router-01（可选）" />
           </Form.Item>
         </Form>
       </Modal>

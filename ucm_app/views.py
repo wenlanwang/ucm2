@@ -563,6 +563,62 @@ class TemplateConfigViewSet(viewsets.ModelViewSet):
     queryset = TemplateConfig.objects.all()
     serializer_class = TemplateConfigSerializer
     permission_classes = [IsAuthenticated]
+    
+    def update(self, request, *args, **kwargs):
+        """更新模板配置，验证列定义格式"""
+        column_definitions = request.data.get('column_definitions')
+        
+        if column_definitions:
+            try:
+                # 尝试解析JSON
+                if isinstance(column_definitions, str):
+                    columns = json.loads(column_definitions)
+                else:
+                    columns = column_definitions
+                
+                # 验证格式
+                if not isinstance(columns, list):
+                    return Response(
+                        {'error': 'column_definitions必须是数组'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # 验证每个列定义的格式
+                for idx, col in enumerate(columns):
+                    if not isinstance(col, dict):
+                        return Response(
+                            {'error': f'列定义[{idx}]必须是对象'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    if 'name' not in col or not isinstance(col['name'], str):
+                        return Response(
+                            {'error': f'列定义[{idx}]必须包含name字段（字符串）'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    if 'required' not in col or not isinstance(col['required'], bool):
+                        return Response(
+                            {'error': f'列定义[{idx}]必须包含required字段（布尔值）'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    if 'example' not in col or not isinstance(col['example'], str):
+                        return Response(
+                            {'error': f'列定义[{idx}]必须包含example字段（字符串）'}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                
+                # 确保数据是JSON字符串格式
+                request.data['column_definitions'] = json.dumps(columns, ensure_ascii=False)
+                
+            except json.JSONDecodeError:
+                return Response(
+                    {'error': 'column_definitions必须是有效的JSON'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        return super().update(request, *args, **kwargs)
 
 
 @api_view(['POST'])

@@ -146,12 +146,27 @@ class TemplateConfig(models.Model):
     def __str__(self):
         return self.get_template_type_display()
 
-    def get_column_definitions(self):
-        """获取列定义列表"""
-        try:
-            return json.loads(self.column_definitions)
-        except:
-            return []
+        def get_column_definitions(self):
+
+            """获取列定义列表，自动处理旧格式数据"""
+
+            try:
+
+                data = json.loads(self.column_definitions)
+
+                # 如果是旧格式（字符串数组），转换为新格式
+
+                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], str):
+
+                    return [{"name": col, "required": False, "example": ""} for col in data]
+
+                return data
+
+            except:
+
+                return []
+
+    
 
         def set_column_definitions(self, columns_list):
 
@@ -200,6 +215,8 @@ class TemplateConfig(models.Model):
         def __str__(self):
 
             return f"UCM日期配置 (周三提前{self.wednesday_deadline_hours}小时, 周六提前{self.saturday_deadline_hours}小时)"
+
+    
 
     
 
