@@ -1,0 +1,924 @@
+import { useState, useEffect, useRef } from 'react';
+import { Card, Steps, Upload, Button, message, Table, DatePicker, Modal, Select, Input, Tag, Space, Row, Col, Alert } from 'antd';
+import { InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, EditOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, PlusOutlined } from '@ant-design/icons';
+import type { UploadProps } from 'antd';
+import dayjs from 'dayjs';
+import api from '../../services/api';
+import { useAuthStore } from '../../store/useAuthStore';
+
+const { Dragger } = Upload;
+const { Option } = Select;
+
+interface ExcelRow {
+  [key: string]: any;
+  rowIndex: number;
+}
+
+interface ValidationResult {
+  row_index: number;
+  errors: { [key: string]: string };
+  warnings: { [key: string]: string };
+}
+
+interface ManufacturerInfo {
+  id: number;
+  device_type: string;
+  manufacturer: string;
+  version: string;
+  auth_method: string;
+}
+
+export default function RequirementRegister() {
+  const [requirementType, setRequirementType] = useState<'import' | 'modify' | 'delete'>('import');
+  const [excelData, setExcelData] = useState<ExcelRow[]>([]);
+  const [excelHeaders, setExcelHeaders] = useState<string[]>([]);
+  const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [ucmChangeDate, setUcmChangeDate] = useState<dayjs.Dayjs | null>(null);
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [columnOptions, setColumnOptions] = useState<{ [key: string]: string[] }>({});
+  const [editingCell, setEditingCell] = useState<{ rowIndex: number; column: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [manufacturerData, setManufacturerData] = useState<ManufacturerInfo[]>([]);
+  const [cascadeOptions, setCascadeOptions] = useState<{
+    deviceTypes: string[];
+    manufacturers: { [deviceType: string]: string[] };
+    versions: { [key: string]: string[] };
+    loginMethods: { [key: string]: string[] };
+  }>({
+    deviceTypes: [],
+    manufacturers: {},
+    versions: {},
+    loginMethods: {}
+  });
+  const [clearedCells, setClearedCells] = useState<Set<string>>(new Set());
+  const [ucmConfig, setUcmConfig] = useState({
+    wednesday_deadline_hours: 7,
+    saturday_deadline_hours: 31
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { user } = useAuthStore();
+
+  const requirementTypeText = {
+    import: '导入',
+    modify: '修改',
+    delete: '删除'
+  };
+
+  useEffect(() => {
+    console.log('RequirementRegister组件挂载，开始加载数�?..');
+    loadColumnOptions();
+    loadManufacturerData();
+    loadUCMDateConfig();
+    setClearedCells(new Set()); // 清空已清空标�?  }, []);
+
+  const loadUCMDateConfig = async () => {
+    try {
+      const response = await api.get('/ucm-date-config/');
+      setUcmConfig(response.data);
+    } catch (error) {
+      console.error('加载UCM日期配置失败:', error);
+    }
+  };
+
+  const loadColumnOptions = async () => {
+    try {
+      const response = await api.get('/column-options/');
+      const options: { [key: string]: string[] } = {};
+      
+      // 支持分页格式和直接数组格�?      let data = response.data;
+      if (data && data.results && Array.isArray(data.results)) {
+        // 分页格式
+        data = data.results;
+      } else if (!Array.isArray(data)) {
+        console.error('数据格式错误，期望数�?', response.data);
+        return;
+      }
+      
+      data.forEach((item: any) => {
+        if (!options[item.column_name]) {
+          options[item.column_name] = [];
+        }
+        options[item.column_name].push(item.option_value);
+      });
+      setColumnOptions(options);
+    } catch (error) {
+      console.error('加载列可选值失�?', error);
+    }
+  };
+
+  const loadManufacturerData = async () => {
+    try {
+      console.log('开始加载厂商版本数�?..');
+      const response = await api.get('/manufacturers/');
+      console.log('API响应:', response);
+      
+      // 支持分页格式和直接数组格�?      let data = response.data;
+      if (data && data.results && Array.isArray(data.results)) {
+        // 分页格式
+        data = data.results;
+      } else if (!Array.isArray(data)) {
+        console.error('数据格式错误，期望数�?', response.data);
+        return;
+      }
+      
+      console.log('厂商版本原始数据:', data);
+      
+      // 构建级联选项
+      const deviceTypes = new Set<string>();
+      const manufacturers: { [key: string]: Set<string> } = {};
+      const versions: { [key: string]: Set<string> } = {};
+      const loginMethods: { [key: string]: Set<string> } = {};
+      
+      data.forEach((item: ManufacturerInfo) => {
+        // 设备类型
+        deviceTypes.add(item.device_type);
+        
+        // 厂商（按设备类型分组�?        if (!manufacturers[item.device_type]) {
+          manufacturers[item.device_type] = new Set();
+        }
+        manufacturers[item.device_type].add(item.manufacturer);
+        
+        // 版本（按设备类型+厂商分组�?        const versionKey = `${item.device_type}-${item.manufacturer}`;
+        if (!versions[versionKey]) {
+          versions[versionKey] = new Set();
+        }
+        versions[versionKey].add(item.version);
+      });
+      
+      const finalOptions = {
+        deviceTypes: Array.from(deviceTypes),
+        manufacturers: Object.fromEntries(
+          Object.entries(manufacturers).map(([k, v]) => [k, Array.from(v)])
+        ),
+        versions: Object.fromEntries(
+          Object.entries(versions).map(([k, v]) => [k, Array.from(v)])
+        )
+      };
+      
+      console.log('级联选项数据:', finalOptions);
+      
+      setManufacturerData(data);
+      setCascadeOptions(finalOptions);
+    } catch (error) {
+      console.error('加载厂商版本数据失败:', error);
+    }
+  };
+
+  const uploadProps: UploadProps = {
+    name: 'file',
+    multiple: false,
+    accept: '.xls',
+    beforeUpload: (file) => {
+      const isXls = file.name.endsWith('.xls');
+      if (!isXls) {
+        message.error('只能上传 .xls 格式的文�?');
+        return Upload.LIST_IGNORE;
+      }
+      return false;
+    },
+    onChange(info) {
+      handleUpload(info.file);
+    },
+  };
+
+  const handleUpload = async (file: any) => {
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('requirement_type', requirementType);
+
+      const response = await api.post('/requirements/upload_excel/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (response.data.headers && response.data.data) {
+        setExcelHeaders(response.data.headers);
+        const dataWithIndex = response.data.data.map((row: any, index: number) => ({
+          ...row,
+          rowIndex: index + 1
+        }));
+        setExcelData(dataWithIndex);
+        setCurrentStep(1);
+        message.success(`成功解析 ${response.data.total_rows} 条记录`);
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '文件上传失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 标记单元格为已清�?  const markCellAsCleared = (rowIndex: number, column: string) => {
+    setClearedCells(prev => {
+      const newSet = new Set(prev);
+      newSet.add(`${rowIndex}-${column}`);
+      return newSet;
+    });
+  };
+
+  // 清除单元格的已清空标�?  const clearCellClearedMark = (rowIndex: number, column: string) => {
+    setClearedCells(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(`${rowIndex}-${column}`);
+      return newSet;
+    });
+  };
+
+  // 导入需求按钮点�?  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // 文件选择处理
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleUpload(file);
+      // 清空input值，允许重复选择同一文件
+      event.target.value = '';
+    }
+  };
+
+  // 从模板加载表�?  const loadTemplateHeaders = async () => {
+    try {
+      const response = await api.get(`/templates/?template_type=${requirementType}`);
+      const templates = response.data.results || response.data;
+      if (templates.length > 0) {
+        const headers = templates[0].column_definitions || [];
+        setExcelHeaders(headers);
+      } else {
+        // 使用默认表头
+        setExcelHeaders(['名称', '设备类型', '厂商', '版本', 'IP', '认证方式']);
+      }
+    } catch (error) {
+      console.error('加载模板表头失败:', error);
+      // 使用默认表头
+      setExcelHeaders(['名称', '设备类型', '厂商', '版本', 'IP', '认证方式']);
+    }
+  };
+
+  // 修改handleAddRow函数
+  const handleAddRow = async () => {
+    // 如果没有表头，从模板获取
+    if (excelHeaders.length === 0) {
+      await loadTemplateHeaders();
+    }
+    
+    const newRow: ExcelRow = {
+      rowIndex: excelData.length + 1
+    };
+    // 使用最新的excelHeaders
+    const headers = excelHeaders.length > 0 ? excelHeaders : ['名称', '设备类型', '厂商', '版本', 'IP', '认证方式'];
+    headers.forEach(header => {
+      newRow[header] = '';
+    });
+    setExcelData([...excelData, newRow]);
+  };
+
+  // UCM日期计算函数
+  const getSelectableDates = () => {
+    const dates = [];
+    const now = dayjs();
+    
+    // 本周�?    const thisWednesday = now.day(3);
+    // 本周�?    const thisSaturday = now.day(6);
+    // 下周�?    const nextWednesday = now.day(10);
+    // 下周�?    const nextSaturday = now.day(13);
+    
+    // 只添加未来的日期
+    if (thisWednesday.isAfter(now, 'day') || thisWednesday.isSame(now, 'day')) {
+      dates.push(thisWednesday);
+    }
+    if (thisSaturday.isAfter(now, 'day') || thisSaturday.isSame(now, 'day')) {
+      dates.push(thisSaturday);
+    }
+    dates.push(nextWednesday);
+    dates.push(nextSaturday);
+    
+    return dates;
+  };
+
+  // 检查日期是否可�?  const isDateSelectable = (date: dayjs.Dayjs) => {
+    const now = dayjs();
+    const dayOfWeek = date.day(); // 0=周日, 3=周三, 6=周六
+    
+    // 必须是周三或周六
+    if (dayOfWeek !== 3 && dayOfWeek !== 6) {
+      return false;
+    }
+    
+    // 不能是过去的日期
+    if (date.isBefore(now, 'day')) {
+      return false;
+    }
+    
+    // 检查截止时间（精确到分钟）
+    const deadline = dayOfWeek === 3 
+      ? date.subtract(ucmConfig.wednesday_deadline_hours, 'hour')
+      : date.subtract(ucmConfig.saturday_deadline_hours, 'hour');
+      
+    if (now.isAfter(deadline)) {
+      return false;
+    }
+    
+    return true;
+  };
+
+  // DatePicker的disabledDate
+  const disabledDate = (current: dayjs.Dayjs) => {
+    // 只允许本周和下周的周三、周�?    const selectableDates = getSelectableDates();
+    const dateStr = current.format('YYYY-MM-DD');
+    
+    return !selectableDates.some(d => d.format('YYYY-MM-DD') === dateStr);
+  };
+
+  const handleValidate = async () => {
+    setLoading(true);
+    try {
+      const response = await api.post('/requirements/validate_data/', {
+        requirement_type: requirementType,
+        excel_data: excelData
+      });
+
+      if (response.data.valid) {
+        setValidationResults(response.data.validation_results);
+        setCurrentStep(2);
+        message.success('校验完成');
+      } else if (response.data.error_type === 'column_mismatch') {
+        message.error(`列名不匹配，缺少: ${response.data.missing_columns.join(', ')}`);
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '校验失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCellStyle = (rowIndex: number, column: string) => {
+    const result = validationResults.find(r => r.row_index === rowIndex - 1);
+    const isCleared = clearedCells.has(`${rowIndex}-${column}`);
+
+    const hasError = result?.errors[column];
+    const hasWarning = result?.warnings[column];
+
+    if (hasError) {
+      return {
+        border: '2px solid #ff4d4f',
+        backgroundColor: '#fff1f0'
+      };
+    }
+    if (hasWarning) {
+      return {
+        border: '2px solid #faad14',
+        backgroundColor: '#fffbe6'
+      };
+    }
+    if (isCleared) {
+      return {
+        border: '2px solid #ff4d4f',
+        backgroundColor: '#fff1f0'
+      };
+    }
+    return {};
+  };
+
+  const getValidationIcon = (rowIndex: number) => {
+    const result = validationResults.find(r => r.row_index === rowIndex - 1);
+    if (!result) return null;
+
+    const hasError = Object.keys(result.errors).length > 0;
+    const hasWarning = Object.keys(result.warnings).length > 0;
+
+    if (hasError) {
+      return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+    }
+    if (hasWarning) {
+      return <CloseCircleOutlined style={{ color: '#faad14' }} />;
+    }
+    return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+  };
+
+  const handleCellEdit = (rowIndex: number, column: string, currentValue: string) => {
+    setEditingCell({ rowIndex, column });
+    setEditValue(currentValue);
+    clearCellClearedMark(rowIndex, column); // 清除已清空标�?  };
+
+  const saveCellEdit = async () => {
+    if (!editingCell) return;
+
+    const newData = [...excelData];
+    const rowIndex = newData.findIndex(row => row.rowIndex === editingCell.rowIndex);
+    if (rowIndex >= 0) {
+      newData[rowIndex][editingCell.column] = editValue;
+      setExcelData(newData);
+
+      // 重新校验该行
+      const rowToValidate = [newData[rowIndex]];
+      try {
+        const response = await api.post('/requirements/validate_data/', {
+          requirement_type: requirementType,
+          excel_data: rowToValidate
+        });
+
+        if (response.data.valid) {
+          const newValidationResults = [...validationResults];
+          const validationIndex = newValidationResults.findIndex(r => r.row_index === editingCell.rowIndex - 1);
+          if (validationIndex >= 0) {
+            newValidationResults[validationIndex] = response.data.validation_results[0];
+            setValidationResults(newValidationResults);
+          }
+        }
+      } catch (error) {
+        console.error('重新校验失败:', error);
+      }
+    }
+
+    setEditingCell(null);
+    setEditValue('');
+  };
+
+
+
+  const handleDeleteRow = (rowIndex: number) => {
+    const newData = excelData.filter(row => row.rowIndex !== rowIndex);
+    setExcelData(newData.map((row, index) => ({
+      ...row,
+      rowIndex: index + 1
+    })));
+  };
+
+  const handleCopyRow = (rowIndex: number) => {
+    const rowToCopy = excelData.find(row => row.rowIndex === rowIndex);
+    if (rowToCopy) {
+      const newRow = {
+        ...rowToCopy,
+        rowIndex: excelData.length + 1
+      };
+      setExcelData([...excelData, newRow]);
+    }
+  };
+
+  const hasValidationErrors = () => {
+    return validationResults.some(result => Object.keys(result.errors).length > 0);
+  };
+
+  const handleSubmit = () => {
+    console.log('handleSubmit called, hasValidationErrors:', hasValidationErrors());
+    if (hasValidationErrors()) {
+      message.error('存在校验错误，无法提�?);
+      return;
+    }
+    console.log('Opening date modal');
+    setShowDateModal(true);
+  };
+
+  const confirmSubmit = async () => {
+    console.log('confirmSubmit called, ucmChangeDate:', ucmChangeDate);
+    if (!ucmChangeDate) {
+      message.error('请选择UCM变更日期');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await api.post('/requirements/submit_requirement/', {
+        requirement_type: requirementType,
+        ucm_change_date: ucmChangeDate.format('YYYY-MM-DD'),
+        excel_data: excelData,
+        validation_results: validationResults
+      });
+
+      if (response.data.success) {
+        message.success(response.data.message);
+        setShowDateModal(false);
+        // 重置表单
+        setCurrentStep(0);
+        setExcelData([]);
+        setValidationResults([]);
+        setUcmChangeDate(null);
+      }
+    } catch (error: any) {
+      console.error('提交错误:', error);
+      const errorData = error.response?.data;
+      
+      if (errorData?.error === '存在重复记录' && errorData?.duplicate_records) {
+        const duplicates = errorData.duplicate_records;
+        
+        // 构建重复记录详细信息
+        const duplicateInfo = duplicates.map((dup: any, idx: number) => {
+          const deviceName = dup.device_name || '未命名设�?;
+          return `${idx + 1}. 名称: ${deviceName}, IP: ${dup.ip}, 已登记日�? ${dup.existing_date}`;
+        }).join('\n');
+        
+        // 使用Promise来处理Modal.confirm，确保异步操作正确执�?        const handleDuplicate = async () => {
+          return new Promise<void>((resolve) => {
+            Modal.confirm({
+              title: '发现重复记录',
+              width: 600,
+              content: (
+                <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                  <Alert
+                    message={`发现 ${duplicates.length} 条重复记录`}
+                    description={
+                      <pre style={{ 
+                        background: '#f5f5f5', 
+                        padding: '10px', 
+                        borderRadius: '4px',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '12px'
+                      }}>
+                        {duplicateInfo}
+                      </pre>
+                    }
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: '16px' }}
+                  />
+                  <p>您可以选择�?/p>
+                  <ul>
+                    <li><strong>继续提交�?/strong>仅提交非重复的记�?/li>
+                    <li><strong>取消�?/strong>返回修改数据</li>
+                  </ul>
+                </div>
+              ),
+              okText: '继续提交',
+              cancelText: '取消',
+              onOk: async () => {
+                // 过滤掉重复记录后重新提交
+                const duplicateIps = duplicates.map((dup: any) => dup.ip);
+                const filteredData = excelData.filter(row => !duplicateIps.includes(row.IP));
+                
+                // 同时过滤对应的校验结�?                const filteredValidationResults = validationResults.filter((result) => {
+                  const rowIndex = result.row_index;
+                  const correspondingRow = excelData[rowIndex];
+                  return correspondingRow && !duplicateIps.includes(correspondingRow.IP);
+                });
+                
+                if (filteredData.length > 0) {
+                  try {
+                    setSubmitting(true);
+                    const response = await api.post('/requirements/submit_requirement/', {
+                      requirement_type: requirementType,
+                      ucm_change_date: ucmChangeDate.format('YYYY-MM-DD'),
+                      excel_data: filteredData,
+                      validation_results: filteredValidationResults
+                    });
+                    
+                    if (response.data.success) {
+                      const submittedCount = response.data.message.match(/\d+/);
+                      message.success(`成功登记 ${submittedCount ? submittedCount[0] : filteredData.length} 条需求（已跳�?${duplicates.length} 条重复记录）`);
+                      setShowDateModal(false);
+                      setCurrentStep(0);
+                      setExcelData([]);
+                      setValidationResults([]);
+                      setUcmChangeDate(null);
+                    }
+                  } catch (err: any) {
+                    console.error('重新提交失败:', err);
+                    message.error(err.response?.data?.error || '提交失败');
+                  } finally {
+                    setSubmitting(false);
+                    resolve();
+                  }
+                } else {
+                  message.warning('所有记录均为重复记录，没有可提交的数据');
+                  resolve();
+                }
+              },
+              onCancel: () => {
+                resolve();
+              }
+            });
+          });
+        };
+        
+        // 执行重复记录处理
+        handleDuplicate().catch(err => {
+          console.error('处理重复记录失败:', err);
+          message.error('处理重复记录时发生错�?);
+        });
+        
+      } else {
+        // 其他错误
+        const errorMessage = errorData?.error || error.message || '提交失败';
+        message.error({
+          content: errorMessage,
+          duration: 5,
+        });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const columns = [
+    {
+      title: '序号',
+      dataIndex: 'rowIndex',
+      width: 60,
+      fixed: 'left' as const,
+    },
+    {
+      title: '校验',
+      width: 60,
+      fixed: 'left' as const,
+      render: (_: any, record: ExcelRow) => getValidationIcon(record.rowIndex),
+    },
+    ...excelHeaders.map(header => ({
+      title: header,
+      dataIndex: header,
+      width: 150,
+      render: (value: any, record: ExcelRow) => {
+        const isEditing = editingCell?.rowIndex === record.rowIndex && editingCell?.column === header;
+        
+        if (isEditing) {
+          // 列可选值下拉选择（优先检查，确保'分组'等列可以使用下拉�?          if (columnOptions[header] && columnOptions[header].length > 0) {
+            return (
+              <Select
+                value={editValue}
+                onChange={(val) => setEditValue(val)}
+                onBlur={saveCellEdit}
+                onPressEnter={saveCellEdit}
+                autoFocus
+                style={{ width: '100%' }}
+                open
+              >
+                {columnOptions[header].map((option: string) => (
+                  <Option key={option} value={option}>{option}</Option>
+                ))}
+              </Select>
+            );
+          }
+          
+          // 级联下拉选择：设备类�?          if (header === '设备类型') {
+            return (
+              <Select
+                value={editValue}
+                onChange={(val) => {
+                  setEditValue(val);
+                  // 清空关联字段（不再清空认证方式）
+                  const newData = [...excelData];
+                  const rowIndex = newData.findIndex(row => row.rowIndex === record.rowIndex);
+                  if (rowIndex >= 0) {
+                    // 清空厂商并标�?                    if (newData[rowIndex]['厂商']) {
+                      markCellAsCleared(record.rowIndex, '厂商');
+                      newData[rowIndex]['厂商'] = '';
+                    }
+                    // 清空版本并标�?                    if (newData[rowIndex]['版本']) {
+                      markCellAsCleared(record.rowIndex, '版本');
+                      newData[rowIndex]['版本'] = '';
+                    }
+                    setExcelData(newData);
+                  }
+                }}
+                onBlur={saveCellEdit}
+                onPressEnter={saveCellEdit}
+                autoFocus
+                style={{ width: '100%' }}
+              >
+                {cascadeOptions.deviceTypes.map((option: string) => (
+                  <Option key={option} value={option}>{option}</Option>
+                ))}
+              </Select>
+            );
+          }
+          
+          // 级联下拉选择：厂�?          if (header === '厂商') {
+            const deviceType = record['设备类型'];
+            const manufacturers = deviceType ? cascadeOptions.manufacturers[deviceType] || [] : [];
+            return (
+              <Select
+                value={editValue}
+                onChange={(val) => {
+                  setEditValue(val);
+                  // 清空关联字段（不再清空认证方式）
+                  const newData = [...excelData];
+                  const rowIndex = newData.findIndex(row => row.rowIndex === record.rowIndex);
+                  if (rowIndex >= 0) {
+                    // 清空版本并标�?                    if (newData[rowIndex]['版本']) {
+                      markCellAsCleared(record.rowIndex, '版本');
+                      newData[rowIndex]['版本'] = '';
+                    }
+                    setExcelData(newData);
+                  }
+                }}
+                onBlur={saveCellEdit}
+                onPressEnter={saveCellEdit}
+                autoFocus
+                style={{ width: '100%' }}
+              >
+                {manufacturers.map((option: string) => (
+                  <Option key={option} value={option}>{option}</Option>
+                ))}
+              </Select>
+            );
+          }
+          
+          // 级联下拉选择：版�?          if (header === '版本') {
+            const deviceType = record['设备类型'];
+            const manufacturer = record['厂商'];
+            const versionKey = `${deviceType}-${manufacturer}`;
+            const versions = (deviceType && manufacturer) ? cascadeOptions.versions[versionKey] || [] : [];
+            return (
+              <Select
+                value={editValue}
+                onChange={(val) => {
+                  setEditValue(val);
+                  // 不再清空认证方式，解除级联关�?                  const newData = [...excelData];
+                  const rowIndex = newData.findIndex(row => row.rowIndex === record.rowIndex);
+                  if (rowIndex >= 0) {
+                    setExcelData(newData);
+                  }
+                }}
+                onBlur={saveCellEdit}
+                onPressEnter={saveCellEdit}
+                autoFocus
+                style={{ width: '100%' }}
+              >
+                {versions.map((option: string) => (
+                  <Option key={option} value={option}>{option}</Option>
+                ))}
+              </Select>
+            );
+          }
+          
+          // 普通输入框（认证方式也使用普通输入框，解除级联关联）
+          if (header === '认证方式') {
+            return (
+              <Input
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={saveCellEdit}
+                onPressEnter={saveCellEdit}
+                autoFocus
+              />
+            );
+          }
+          
+          // 普通输入框
+          return (
+            <Input
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={saveCellEdit}
+              onPressEnter={saveCellEdit}
+              autoFocus
+            />
+          );
+        }
+
+        return (
+          <div
+            onClick={() => handleCellEdit(record.rowIndex, header, value || '')}
+            style={{
+              cursor: 'pointer',
+              minHeight: '40px',
+              padding: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              ...getCellStyle(record.rowIndex, header)
+            }}
+          >
+            {value || ''}
+          </div>
+        );
+      },
+    })),
+    {
+      title: '操作',
+      width: 120,
+      fixed: 'right' as const,
+      render: (_: any, record: ExcelRow) => (
+        <Space>
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => handleCopyRow(record.rowIndex)}
+          />
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDeleteRow(record.rowIndex)}
+          />
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <h1 style={{ marginBottom: 24 }}>需求登�?/h1>
+      
+      <Card>
+        {/* 需求类型选择和操作按�?*/}
+        <div style={{ marginBottom: 16 }}>
+          <Space>
+            <strong>需求类型：</strong>
+            <Select 
+              value={requirementType} 
+              onChange={(value) => setRequirementType(value)} 
+              style={{ width: 200 }}
+            >
+              <Option value="import">导入</Option>
+              <Option value="modify">修改</Option>
+              <Option value="delete">删除</Option>
+            </Select>
+            
+            {/* 导入需求按钮和文件输入 */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              accept=".xls"
+              onChange={handleFileSelect}
+            />
+            <Button 
+              type="primary" 
+              icon={<UploadOutlined />} 
+              onClick={handleImportClick}
+            >
+              导入需�?            </Button>
+            
+            {/* 新增行按�?*/}
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />} 
+              onClick={handleAddRow}
+            >
+              新增�?            </Button>
+          </Space>
+        </div>
+
+        {/* 提示文字 */}
+        <Alert
+          message="提示"
+          description="请点�?新增�?创建需求，或点�?导入需�?从Excel文件导入"
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
+
+        {/* UCM变更日期 */}
+        <div style={{ marginBottom: 16 }}>
+          <strong>UCM变更日期�?/strong>
+          <DatePicker
+            value={ucmChangeDate}
+            onChange={setUcmChangeDate}
+            disabledDate={disabledDate}
+            style={{ width: 200 }}
+            placeholder="请选择UCM变更日期"
+          />
+        </div>
+
+        {/* 数据表格（始终显示） */}
+        <Table
+          columns={columns}
+          dataSource={excelData}
+          loading={loading}
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+          }}
+          bordered
+          size="small"
+        />
+
+        {/* 操作按钮 */}
+        <div style={{ marginTop: 16, textAlign: 'right' }}>
+          <Space>
+            <Button onClick={handleValidate} loading={loading}>
+              开始校�?            </Button>
+            <Button 
+              type="primary" 
+              onClick={handleSubmit}
+              disabled={hasValidationErrors() || submitting || !ucmChangeDate}
+              loading={submitting}
+            >
+              登记需�?            </Button>
+          </Space>
+        </div>
+      </Card>
+      
+      <Modal
+        title="选择UCM变更日期"
+        open={showDateModal}
+        onOk={confirmSubmit}
+        onCancel={() => setShowDateModal(false)}
+        confirmLoading={submitting}
+      >
+        <DatePicker
+          value={ucmChangeDate}
+          onChange={setUcmChangeDate}
+          disabledDate={disabledDate}
+          style={{ width: '100%' }}
+          placeholder="请选择UCM变更日期"
+        />
+      </Modal>
+    </div>
+  );
+}
