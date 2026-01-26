@@ -75,8 +75,33 @@ export default function RequirementRegister() {
   const loadAvailableDates = async () => {
     try {
       const response = await api.get('/requirements/available_dates/');
-      setAvailableDates(response.data.dates);
+      const dates = response.data.dates;
+      setAvailableDates(dates);
       setDeadlines(response.data.deadlines);
+
+      // 自动选择最近的可选日期（优先周三和周六）
+      if (dates && dates.length > 0) {
+        const today = dayjs();
+        const currentWeekStart = today.startOf('week'); // 周日作为一周开始
+
+        // 生成本周及未来几周的周三和周六日期列表
+        const priorityOrder: string[] = [];
+        for (let week = 0; week < 8; week++) { // 预留8周
+          const weekOffset = week;
+          const wednesday = currentWeekStart.add(3 + weekOffset * 7, 'day').format('YYYY-MM-DD');
+          const saturday = currentWeekStart.add(6 + weekOffset * 7, 'day').format('YYYY-MM-DD');
+          priorityOrder.push(wednesday, saturday);
+        }
+
+        // 找到第一个在可选日期中且未过期的日期
+        const selectedDate = priorityOrder.find(date =>
+          dates.includes(date) && dayjs(date).isAfter(today, 'day')
+        );
+
+        if (selectedDate) {
+          setUcmChangeDate(dayjs(selectedDate));
+        }
+      }
     } catch (error) {
       message.error('加载可用日期失败');
     }
@@ -251,11 +276,6 @@ export default function RequirementRegister() {
   };
   
   const handleValidateAll = async () => {
-    if (!ucmChangeDate) {
-      message.warning('请先选择UCM变更日期');
-      return;
-    }
-    
     setLoading(true);
     try {
       const response = await api.post('/requirements/validate_data/', {
@@ -482,13 +502,44 @@ export default function RequirementRegister() {
             validation
           };
         });
-        
+
         console.log('成功解析数据行数:', newRows.length);
-        
-        setTableData(newRows);
-        setFileList([]);
-        setUploadModalVisible(false);
-        message.success(`成功导入 ${rows.length} 条数据`);
+
+        // 立即调用后端API进行完整校验
+        try {
+          const response = await api.post('/requirements/validate_data/', {
+            requirement_type: activeTab,
+            excel_data: newRows.map(row => row.data)
+          });
+
+          const validationResults = response.data.validation_results;
+          const validatedRows = newRows.map((row, index) => ({
+            ...row,
+            validation: {
+              isValid: validationResults[index]?.is_valid || false,
+              errors: validationResults[index]?.errors || {},
+              warnings: validationResults[index]?.warnings || {}
+            }
+          }));
+
+          setTableData(validatedRows);
+          setFileList([]);
+          setUploadModalVisible(false);
+
+          const hasErrors = validatedRows.some(row => !row.validation.isValid);
+          if (hasErrors) {
+            message.success(`成功导入 ${rows.length} 条数据，存在校验错误`);
+          } else {
+            message.success(`成功导入 ${rows.length} 条数据，校验通过`);
+          }
+        } catch (error: any) {
+          console.error('自动校验失败:', error);
+          // 如果自动校验失败，仍然显示数据，但提示用户
+          setTableData(newRows);
+          setFileList([]);
+          setUploadModalVisible(false);
+          message.warning(`成功导入 ${rows.length} 条数据，但自动校验失败，请手动点击校验`);
+        }
       };
       
       // 只有当前页面有数据时才显示覆盖提示
@@ -691,6 +742,7 @@ export default function RequirementRegister() {
         {/* 顶部控制栏 */}
         <div style={{ marginBottom: 16 }}>
           <Space wrap>
+            <span>UCM变更日期：</span>
             <DatePicker
               placeholder="选择UCM变更日期"
               value={ucmChangeDate}

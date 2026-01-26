@@ -1,3 +1,13 @@
+PS D:\dev\ucm2> git push origin master
+fatal: unable to access 'https://github.com/wenlanwang/ucm2.git/  ': Recv failure: Connection was reset
+
+git remote remove origin
+git remote add origin https://github.com/wenlanwang/ucm2.git
+git remote set-url origin https://github.com/wenlanwang/ucm2.git
+
+git remote -v
+git config --get remote.origin.url
+
 ======================================
 创建快照
 ======================================
@@ -7,7 +17,7 @@ powershell进入项目根目录
 git add .
 
 # 2. 提交为新快照（写清楚用途，方便以后识别）
-git commit -m "Backup: before refactoring user module"
+git commit -m "Backup: 列的可选值问题解决"
 
 # 3. 推送到 GitHub（完成云端备份）
 git push origin master
