@@ -51,6 +51,7 @@ export default function RequirementRegister() {
   const [fileList, setFileList] = useState<any[]>([]);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const nextRowId = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // 加载可用UCM日期
   useEffect(() => {
@@ -163,7 +164,7 @@ export default function RequirementRegister() {
         warnings: {}
       }
     };
-    setTableData([...tableData, newRow]);
+    setTableData(prevData => [...prevData, newRow]);
   }, [templateColumns]);
   
   const handleDeleteRow = useCallback((id: number) => {
@@ -365,6 +366,22 @@ export default function RequirementRegister() {
     setFileList(info.fileList.slice(-1));
   };
   
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+  
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFileList([{
+        uid: '-1',
+        name: file.name,
+        status: 'done',
+        originFileObj: file,
+      }]);
+    }
+  };
+  
   const handleImportExcel = async () => {
     const file = fileList[0]?.originFileObj;
     if (!file) {
@@ -450,40 +467,48 @@ export default function RequirementRegister() {
         return;
       }
       
-      // 确认导入
-      Modal.confirm({
-        title: '确认导入',
-        icon: <ExclamationCircleOutlined />,
-        content: (
-          <div>
-            <p>导入将覆盖页面上现有的所有数据，是否继续导入？</p>
-            <p>Excel文件：{file.name}</p>
-            <p>数据行数：{rows.length}</p>
-          </div>
-        ),
-        onOk: async () => {
-          // 解析数据
-          const newRows: RequirementRow[] = rows.map(row => {
-            const rowData: Record<string, string> = {};
-            headers.forEach((header, index) => {
-              rowData[header] = String(row[index] || '').trim();
-            });
-            const validation = validateRow(rowData);
-            return {
-              id: nextRowId.current++,
-              data: rowData,
-              validation
-            };
+      // 确认导入（只在有数据时显示覆盖提示）
+      const doImport = async () => {
+        // 解析数据
+        const newRows: RequirementRow[] = rows.map(row => {
+          const rowData: Record<string, string> = {};
+          headers.forEach((header, index) => {
+            rowData[header] = String(row[index] || '').trim();
           });
-          
-          console.log('成功解析数据行数:', newRows.length);
-          
-          setTableData(newRows);
-          setFileList([]);
-          setUploadModalVisible(false);
-          message.success(`成功导入 ${rows.length} 条数据`);
-        }
-      });
+          const validation = validateRow(rowData);
+          return {
+            id: nextRowId.current++,
+            data: rowData,
+            validation
+          };
+        });
+        
+        console.log('成功解析数据行数:', newRows.length);
+        
+        setTableData(newRows);
+        setFileList([]);
+        setUploadModalVisible(false);
+        message.success(`成功导入 ${rows.length} 条数据`);
+      };
+      
+      // 只有当前页面有数据时才显示覆盖提示
+      if (tableData.length > 0) {
+        Modal.confirm({
+          title: '确认导入',
+          icon: <ExclamationCircleOutlined />,
+          content: (
+            <div>
+              <p>导入将覆盖页面上现有的所有数据，是否继续导入？</p>
+              <p>Excel文件：{file.name}</p>
+              <p>数据行数：{rows.length}</p>
+            </div>
+          ),
+          onOk: doImport
+        });
+      } else {
+        // 没有数据，直接导入
+        doImport();
+      }
     } catch (error: any) {
       console.error('Excel导入详细错误:', error);
       console.error('错误堆栈:', error.stack);
@@ -763,19 +788,31 @@ export default function RequirementRegister() {
         }}
         confirmLoading={loading}
       >
-        <Dragger
-          fileList={fileList}
-          onChange={handleUploadChange}
-          beforeUpload={() => false}
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
           accept=".xls,.xlsx"
-          maxCount={1}
+          onChange={handleFileSelect}
+        />
+        {fileList.length > 0 ? (
+          <div>
+            <p>已选择文件：{fileList[0].name}</p>
+            <p>文件大小：{(fileList[0].originFileObj.size / 1024).toFixed(2)} KB</p>
+          </div>
+        ) : (
+          <p>请点击下方按钮选择文件</p>
+        )}
+        <Button
+          type="primary"
+          onClick={handleImportClick}
+          style={{ marginTop: 16 }}
         >
-          <p className="ant-upload-drag-icon">
-            <UploadOutlined />
-          </p>
-          <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-          <p className="ant-upload-hint">支持 .xls 和 .xlsx 格式，文件大小不超过10MB，最多500行数据</p>
-        </Dragger>
+          选择文件
+        </Button>
+        <p style={{ marginTop: 8, color: '#999' }}>
+          支持 .xls 和 .xlsx 格式，文件大小不超过10MB，最多500行数据
+        </p>
       </Modal>
     </div>
   );
