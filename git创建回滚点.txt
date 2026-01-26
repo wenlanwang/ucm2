@@ -1,0 +1,32 @@
+======================================
+创建快照
+======================================
+powershell进入项目根目录
+
+# 1. 添加所有源代码（自动忽略 .pyc 等垃圾文件）
+git add .
+
+# 2. 提交为新快照（写清楚用途，方便以后识别）
+git commit -m "Backup: before refactoring user module"
+
+# 3. 推送到 GitHub（完成云端备份）
+git push origin master
+
+
+======================================
+恢复快照
+======================================
+推荐方案：用 git reset --hard + 强制拉取（一步到位）
+步骤 1：找到你要恢复的快照 ID
+在浏览器打开：
+
+https://github.com/wenlanwang/ucm2/commits/master
+点击你想要的 commit，复制它的 完整 SHA（如 a1b2c3d4e5f6...）
+
+假设你想恢复到这个 commit：ea2e697bfbafd258c4e9ef56dcc86e7c8acf81ea
+
+powershell：
+cd D:\dev\ucm2
+git checkout master
+git fetch origin
+git reset --hard ea2e697bfbafd258c4e9ef56dcc86e7c8acf81ea

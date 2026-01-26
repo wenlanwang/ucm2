@@ -52,7 +52,19 @@ export default function ColumnOptionsManage() {
     try {
       const columnSet = new Set<string>();
       const response = await api.get('/column-options/');
-      response.data.forEach((item: ColumnOption) => {
+      const responseData = response.data;
+      let items: ColumnOption[] = [];
+      
+      if (Array.isArray(responseData)) {
+        items = responseData;
+      } else if (responseData && Array.isArray(responseData.results)) {
+        items = responseData.results;
+      } else if (responseData && typeof responseData === 'object') {
+        console.error('API返回数据格式错误:', responseData);
+        return;
+      }
+      
+      items.forEach((item: ColumnOption) => {
         columnSet.add(item.column_name);
       });
       setColumns(Array.from(columnSet));
@@ -80,6 +92,10 @@ export default function ColumnOptionsManage() {
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      // mode="tags"返回数组，需要转换为字符串
+      if (Array.isArray(values.column_name)) {
+        values.column_name = values.column_name[0];
+      }
       await api.post('/column-options/', values);
       message.success('添加成功');
       setModalVisible(false);
@@ -159,29 +175,16 @@ export default function ColumnOptionsManage() {
             rules={[{ required: true, message: '请输入列名' }]}
           >
             <Select
+              mode="tags"
               placeholder="选择或输入列名"
-              dropdownRender={menu => (
-                <>
-                  {menu}
-                  <div style={{ padding: '8px', borderTop: '1px solid #d9d9d9' }}>
-                    <Input
-                      placeholder="输入新列名"
-                      value={newColumnName}
-                      onChange={(e) => setNewColumnName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (newColumnName) {
-                            form.setFieldsValue({ column_name: newColumnName });
-                            setNewColumnName('');
-                          }
-                        }
-                      }}
-                      autoFocus
-                    />
-                  </div>
-                </>
-              )}
+              onChange={(value) => {
+                if (value && value.length > 0) {
+                  const newColumn = value[value.length - 1];
+                  if (!columns.includes(newColumn)) {
+                    setColumns([...columns, newColumn]);
+                  }
+                }
+              }}
             >
               {columns.map(col => (
                 <Option key={col} value={col}>{col}</Option>
