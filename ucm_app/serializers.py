@@ -43,3 +43,9 @@ class TemplateConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = TemplateConfig
         fields = '__all__'
+    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # 添加解析后的列定义
+        data['get_column_definitions'] = instance.get_column_definitions()
+        return data

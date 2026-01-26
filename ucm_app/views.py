@@ -15,7 +15,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from .models import (
     ManufacturerVersionInfo, ColumnOptions, UCMDeviceInventory,
-    UCMRequirement, TemplateConfig
+    UCMRequirement, TemplateConfig, UCMDateConfig
 )
 from .serializers import (
     UserSerializer, ManufacturerVersionInfoSerializer, ColumnOptionsSerializer,
@@ -240,6 +240,61 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             return Response({'error': f'文件解析失败: {str(e)}'}, 
                           status=status.HTTP_400_BAD_REQUEST)
     
+    @action(detail=False, methods=['get'])
+    def available_dates(self, request):
+        """获取可用的UCM变更日期"""
+        try:
+            from datetime import timedelta
+            
+            config = UCMDateConfig.objects.first()
+            if not config:
+                config = UCMDateConfig.objects.create(
+                    wednesday_deadline_hours=7,
+                    saturday_deadline_hours=31
+                )
+            
+            now = timezone.now()
+            available_dates = []
+            deadlines = {}
+            
+            # 计算本周三
+            this_wednesday = now + timedelta(days=(2 - now.weekday()) % 7)
+            this_wednesday = this_wednesday.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # 计算本周六
+            this_saturday = now + timedelta(days=(5 - now.weekday()) % 7)
+            this_saturday = this_saturday.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # 计算下周三
+            next_wednesday = this_wednesday + timedelta(days=7)
+            
+            # 计算下周六
+            next_saturday = this_saturday + timedelta(days=7)
+            
+            # 检查是否可选（周三提前7小时，周六提前31小时）
+            wednesday_deadline = this_wednesday - timedelta(hours=config.wednesday_deadline_hours)
+            saturday_deadline = this_saturday - timedelta(hours=config.saturday_deadline_hours)
+            
+            candidates = [
+                (this_wednesday, wednesday_deadline, '周三'),
+                (this_saturday, saturday_deadline, '周六'),
+                (next_wednesday, wednesday_deadline + timedelta(days=7), '周三'),
+                (next_saturday, saturday_deadline + timedelta(days=7), '周六')
+            ]
+            
+            for date, deadline, day_type in candidates:
+                if now < deadline:
+                    date_str = date.strftime('%Y-%m-%d')
+                    available_dates.append(date_str)
+                    deadlines[date_str] = f"{day_type}UCM变更，最晚登记时间在{deadline.strftime('%Y-%m-%d %H:%M')}前"
+            
+            return Response({
+                'dates': available_dates,
+                'deadlines': deadlines
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
     @action(detail=False, methods=['post'])
     def validate_data(self, request):
         """校验数据"""
@@ -253,21 +308,31 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         try:
             template = TemplateConfig.objects.get(template_type=requirement_type)
             template_columns = template.get_column_definitions()
+            template_column_names = [col['name'] for col in template_columns]
         except TemplateConfig.DoesNotExist:
             return Response({'error': '模板配置不存在'}, status=status.HTTP_400_BAD_REQUEST)
         
         # 列名校验
         excel_headers = list(excel_data[0].keys()) if excel_data else []
         missing_columns = []
-        for col in template_columns:
-            if col not in excel_headers:
-                missing_columns.append(col)
+        extra_columns = []
         
-        if missing_columns:
+        # 检查缺少的列
+        for col_def in template_columns:
+            if col_def['name'] not in excel_headers:
+                missing_columns.append(col_def['name'])
+        
+        # 检查多余的列
+        for header in excel_headers:
+            if header not in template_column_names:
+                extra_columns.append(header)
+        
+        if missing_columns or extra_columns:
             return Response({
                 'valid': False,
                 'error_type': 'column_mismatch',
-                'missing_columns': missing_columns
+                'missing_columns': missing_columns,
+                'extra_columns': extra_columns
             })
         
         # 数据校验
@@ -285,28 +350,48 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         for row_idx, row_data in enumerate(excel_data):
             row_validation = {
                 'row_index': row_idx,
+                'is_valid': True,
                 'errors': {},
                 'warnings': {}
             }
             
             # 校验每列数据
-            for col, value in row_data.items():
-                # 可选值校验
-                if col in column_options and value:
-                    if value not in column_options[col]:
-                        row_validation['errors'][col] = '不在可选值清单中'
+            for col_def in template_columns:
+                col_name = col_def['name']
+                value = row_data.get(col_name, '').strip()
                 
-                # 级联关系校验
-                if col == '厂商' and value:
+                # 必填字段校验
+                if col_def['required'] and not value:
+                    row_validation['errors'][col_name] = '此字段为必填项'
+                    row_validation['is_valid'] = False
+                    continue
+                
+                # IP地址格式校验
+                if col_name == 'IP' and value:
+                    import re
+                    ipv4_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+                    if not re.match(ipv4_pattern, value):
+                        row_validation['errors'][col_name] = 'IP地址格式不正确（IPv4）'
+                        row_validation['is_valid'] = False
+                        continue
+                
+                # 可选值校验
+                if col_name in column_options and value:
+                    if value not in column_options[col_name]:
+                        row_validation['errors'][col_name] = '不在可选值清单中'
+                        row_validation['is_valid'] = False
+                
+                # 级联关系校验（设备类型→厂商→版本）
+                if col_name == '厂商' and value:
                     device_type = row_data.get('设备类型')
                     if device_type:
                         valid_manufacturers = ManufacturerVersionInfo.objects.filter(
                             device_type=device_type
                         ).values_list('manufacturer', flat=True).distinct()
                         if value not in valid_manufacturers:
-                            row_validation['warnings'][col] = '厂商与设备类型不匹配'
+                            row_validation['warnings'][col_name] = '厂商与设备类型不匹配'
                 
-                elif col == '版本' and value:
+                elif col_name == '版本' and value:
                     device_type = row_data.get('设备类型')
                     manufacturer = row_data.get('厂商')
                     if device_type and manufacturer:
@@ -315,20 +400,7 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                             manufacturer=manufacturer
                         ).values_list('version', flat=True).distinct()
                         if value not in valid_versions:
-                            row_validation['warnings'][col] = '版本与设备类型、厂商不匹配'
-                
-                elif col == '认证方式' and value:
-                    device_type = row_data.get('设备类型')
-                    manufacturer = row_data.get('厂商')
-                    version = row_data.get('版本')
-                    if all([device_type, manufacturer, version]):
-                        valid_login_methods = ManufacturerVersionInfo.objects.filter(
-                            device_type=device_type,
-                            manufacturer=manufacturer,
-                            version=version
-                        ).values_list('auth_method', flat=True).distinct()
-                        if value not in valid_login_methods:
-                            row_validation['warnings'][col] = '认证方式与版本不匹配'
+                            row_validation['warnings'][col_name] = '版本与设备类型、厂商不匹配'
             
             validation_results.append(row_validation)
         
@@ -336,6 +408,122 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             'valid': True,
             'validation_results': validation_results
         })
+    
+    @action(detail=False, methods=['post'])
+    def check_duplicates(self, request):
+        """检查重复需求"""
+        ucm_change_date = request.data.get('ucm_change_date')
+        requirements = request.data.get('requirements', [])
+        
+        if not ucm_change_date or not requirements:
+            return Response({'error': '参数不完整'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        duplicates = []
+        
+        for req_data in requirements:
+            name = req_data.get('名称', '')
+            ip = req_data.get('IP', '')
+            
+            # 检查名称+UCM变更日期
+            existing_by_name = UCMRequirement.objects.filter(
+                device_name=name,
+                ucm_change_date=ucm_change_date,
+                status='pending'
+            ).first()
+            
+            # 检查IP+UCM变更日期
+            existing_by_ip = UCMRequirement.objects.filter(
+                ip=ip,
+                ucm_change_date=ucm_change_date,
+                status='pending'
+            ).first()
+            
+            if existing_by_name or existing_by_ip:
+                duplicate_info = {
+                    'name': name,
+                    'ip': ip
+                }
+                if existing_by_name:
+                    duplicate_info['duplicate_by_name'] = {
+                        'existing_date': existing_by_name.ucm_change_date.strftime('%Y-%m-%d'),
+                        'existing_submitter': existing_by_name.submitter.username
+                    }
+                if existing_by_ip:
+                    duplicate_info['duplicate_by_ip'] = {
+                        'existing_date': existing_by_ip.ucm_change_date.strftime('%Y-%m-%d'),
+                        'existing_submitter': existing_by_ip.submitter.username
+                    }
+                duplicates.append(duplicate_info)
+        
+        return Response({
+            'has_duplicates': len(duplicates) > 0,
+            'duplicates': duplicates
+        })
+    
+    @action(detail=False, methods=['post'])
+    def batch_submit(self, request):
+        """批量提交需求（带事务）"""
+        requirement_type = request.data.get('requirement_type')
+        ucm_change_date = request.data.get('ucm_change_date')
+        requirements = request.data.get('requirements', [])
+        
+        if not all([requirement_type, ucm_change_date, requirements]):
+            return Response({'error': '参数不完整'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 使用事务确保数据一致性
+        from django.db import transaction
+        
+        try:
+            with transaction.atomic():
+                submitted_count = 0
+                skipped_count = 0
+                skipped_records = []
+                submitted_ids = []
+                
+                for req_data in requirements:
+                    name = req_data.get('名称', '')
+                    ip = req_data.get('IP', '')
+                    
+                    # 检查重复（名称+UCM变更日期 或 IP+UCM变更日期）
+                    existing = UCMRequirement.objects.filter(
+                        Q(device_name=name) | Q(ip=ip),
+                        ucm_change_date=ucm_change_date,
+                        status='pending'
+                    ).first()
+                    
+                    if existing:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': '重复记录'
+                        })
+                        continue
+                    
+                    # 创建需求记录
+                    requirement = UCMRequirement(
+                        requirement_type=requirement_type,
+                        ucm_change_date=ucm_change_date,
+                        submitter=request.user,
+                        requirement_data=json.dumps(req_data, ensure_ascii=False),
+                        device_name=name,
+                        ip=ip
+                    )
+                    requirement.save()
+                    submitted_count += 1
+                    submitted_ids.append(requirement.id)
+                
+                return Response({
+                    'success': True,
+                    'submitted_count': submitted_count,
+                    'skipped_count': skipped_count,
+                    'skipped_records': skipped_records,
+                    'submitted_ids': submitted_ids
+                })
+        except Exception as e:
+            transaction.set_rollback(True)
+            return Response({'error': f'提交失败: {str(e)}'}, 
+                          status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'])
     def submit_requirement(self, request):
@@ -619,6 +807,94 @@ class TemplateConfigViewSet(viewsets.ModelViewSet):
                 )
         
         return super().update(request, *args, **kwargs)
+    
+    @action(detail=False, methods=['get'])
+    def download_template(self, request):
+        """下载模板文件（.xls格式）"""
+        template_type = request.query_params.get('template_type')
+        
+        if not template_type:
+            return Response({'error': '请指定模板类型'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # 获取模板配置
+        try:
+            template = TemplateConfig.objects.get(template_type=template_type)
+            columns = template.get_column_definitions()
+        except TemplateConfig.DoesNotExist:
+            return Response({'error': '模板配置不存在'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # 使用xlwt创建.xls文件
+        import xlwt
+        
+        # 创建工作簿
+        workbook = xlwt.Workbook(encoding='utf-8')
+        sheet = workbook.add_sheet('模板')
+        
+        # 定义样式
+        header_style = xlwt.XFStyle()
+        header_font = xlwt.Font()
+        header_font.bold = True
+        header_font.height = 280  # 14pt
+        header_style.font = header_font
+        
+        header_pattern = xlwt.Pattern()
+        header_pattern.pattern = xlwt.Pattern.SOLID_PATTERN
+        header_pattern.pattern_fore_colour = xlwt.Style.colour_map['light_blue']
+        header_style.pattern = header_pattern
+        
+        header_alignment = xlwt.Alignment()
+        header_alignment.horz = xlwt.Alignment.HORZ_CENTER
+        header_alignment.vert = xlwt.Alignment.VERT_CENTER
+        header_style.alignment = header_alignment
+        
+        header_borders = xlwt.Borders()
+        header_borders.left = xlwt.Borders.THIN
+        header_borders.right = xlwt.Borders.THIN
+        header_borders.top = xlwt.Borders.THIN
+        header_borders.bottom = xlwt.Borders.THIN
+        header_style.borders = header_borders
+        
+        data_style = xlwt.XFStyle()
+        data_borders = xlwt.Borders()
+        data_borders.left = xlwt.Borders.THIN
+        data_borders.right = xlwt.Borders.THIN
+        data_borders.top = xlwt.Borders.THIN
+        data_borders.bottom = xlwt.Borders.THIN
+        data_style.borders = data_borders
+        
+        # 写入表头
+        for col_idx, col_def in enumerate(columns):
+            header = col_def['name']
+            if col_def['required']:
+                header += '*'
+            sheet.write(0, col_idx, header, header_style)
+            # 设置列宽
+            sheet.col(col_idx).width = 4000  # 约20个字符
+        
+        # 写入样例数据
+        for col_idx, col_def in enumerate(columns):
+            if col_def['example']:
+                sheet.write(1, col_idx, col_def['example'], data_style)
+        
+        # 创建HTTP响应
+        response = HttpResponse(content_type='application/vnd.ms-excel')
+        
+        # 设置文件名
+        type_map = {
+            'import': '导入',
+            'modify': '修改',
+            'delete': '删除'
+        }
+        type_name = type_map.get(template_type, template_type)
+        filename = f'{type_name}_模板.xls'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # 保存工作簿到响应
+        workbook.save(response)
+        
+        return response
 
 
 @api_view(['POST'])

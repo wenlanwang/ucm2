@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Card, Table, Button, message, Space, Tag, Modal, DatePicker, Select, Input } from 'antd';
 import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -21,6 +22,7 @@ interface Requirement {
 }
 
 export default function RequirementList() {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
   const [data, setData] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,6 +37,7 @@ export default function RequirementList() {
     pending: 0,
     processed: 0
   });
+  const [highlightIds, setHighlightIds] = useState<number[]>([]);
 
   const { user } = useAuthStore();
 
@@ -50,10 +53,36 @@ export default function RequirementList() {
     delete: 'red'
   };
 
+  // 处理从需求登记页面跳转过来的状态（只执行一次）
+  useEffect(() => {
+    if (location.state?.filters) {
+      const { filters: stateFilters } = location.state;
+      setFilters({
+        submitter: stateFilters.submitter || '',
+        requirement_type: stateFilters.requirement_type || '',
+        ucm_change_date: stateFilters.ucm_change_date ? dayjs(stateFilters.ucm_change_date) : null,
+        search: ''
+      });
+      setActiveTab(stateFilters.status || 'pending');
+    }
+  }, []); // 空依赖数组，只执行一次
+  
+  // 加载数据和数量
   useEffect(() => {
     loadData();
     loadCounts();
   }, [activeTab, filters]);
+  
+  // 高亮显示刚登记的记录，3秒后自动取消
+  useEffect(() => {
+    if (location.state?.highlightIds && location.state.highlightIds.length > 0) {
+      setHighlightIds(location.state.highlightIds);
+      const timer = setTimeout(() => {
+        setHighlightIds([]);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state?.highlightIds]);
 
   const loadData = async () => {
     setLoading(true);
@@ -424,6 +453,7 @@ export default function RequirementList() {
           loading={loading}
           rowKey="id"
           scroll={{ x: 'max-content' }}
+          rowClassName={(record) => highlightIds.includes(record.id) ? 'highlight-row' : ''}
           pagination={{
             pageSize: 10,
             showSizeChanger: true,
@@ -432,6 +462,24 @@ export default function RequirementList() {
           }}
         />
       </Card>
+      
+      <style>
+        {`
+          .highlight-row {
+            background-color: #e6f7ff !important;
+            animation: highlightFade 3s ease-out forwards;
+          }
+          
+          @keyframes highlightFade {
+            0% {
+              background-color: #e6f7ff;
+            }
+            100% {
+              background-color: transparent;
+            }
+          }
+        `}
+      </style>
     </div>
   );
 }

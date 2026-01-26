@@ -146,82 +146,38 @@ class TemplateConfig(models.Model):
     def __str__(self):
         return self.get_template_type_display()
 
-        def get_column_definitions(self):
+    def get_column_definitions(self):
+        """获取列定义列表，自动处理旧格式数据"""
+        try:
+            data = json.loads(self.column_definitions)
+            # 如果是旧格式（字符串数组），转换为新格式
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], str):
+                return [{"name": col, "required": False, "example": ""} for col in data]
+            return data
+        except:
+            return []
 
-            """获取列定义列表，自动处理旧格式数据"""
+    def set_column_definitions(self, columns_list):
+        """设置列定义"""
+        self.column_definitions = json.dumps(columns_list, ensure_ascii=False)
 
-            try:
 
-                data = json.loads(self.column_definitions)
+class UCMDateConfig(models.Model):
+    """UCM日期限制配置表"""
+    wednesday_deadline_hours = models.IntegerField(
+        default=7,
+        verbose_name='周三截止提前小时数'
+    )
+    saturday_deadline_hours = models.IntegerField(
+        default=31,
+        verbose_name='周六截止提前小时数'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
-                # 如果是旧格式（字符串数组），转换为新格式
+    class Meta:
+        verbose_name = 'UCM日期配置'
+        verbose_name_plural = 'UCM日期配置'
 
-                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], str):
-
-                    return [{"name": col, "required": False, "example": ""} for col in data]
-
-                return data
-
-            except:
-
-                return []
-
-    
-
-        def set_column_definitions(self, columns_list):
-
-            """设置列定义"""
-
-            self.column_definitions = json.dumps(columns_list, ensure_ascii=False)
-
-    
-
-    
-
-    class UCMDateConfig(models.Model):
-
-        """UCM日期限制配置表"""
-
-        wednesday_deadline_hours = models.IntegerField(
-
-            default=7,
-
-            verbose_name='周三截止提前小时数'
-
-        )
-
-        saturday_deadline_hours = models.IntegerField(
-
-            default=31,
-
-            verbose_name='周六截止提前小时数'
-
-        )
-
-        created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
-
-        updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
-
-    
-
-        class Meta:
-
-            verbose_name = 'UCM日期配置'
-
-            verbose_name_plural = 'UCM日期配置'
-
-    
-
-        def __str__(self):
-
-            return f"UCM日期配置 (周三提前{self.wednesday_deadline_hours}小时, 周六提前{self.saturday_deadline_hours}小时)"
-
-    
-
-    
-
-    
-
-    
-        
-
+    def __str__(self):
+        return f"UCM日期配置 (周三提前{self.wednesday_deadline_hours}小时, 周六提前{self.saturday_deadline_hours}小时)"
