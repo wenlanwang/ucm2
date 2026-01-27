@@ -627,6 +627,20 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         
         return Response({'success': True, 'count': count})
     
+    @action(detail=False, methods=['post'])
+    def batch_delete(self, request):
+        """批量删除需求"""
+        requirement_ids = request.data.get('requirement_ids', [])
+        if not requirement_ids:
+            return Response({'error': '请选择要删除的记录'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        count, _ = UCMRequirement.objects.filter(
+            id__in=requirement_ids
+        ).delete()
+        
+        return Response({'success': True, 'count': count})
+    
     @action(detail=False, methods=['get'])
     def export_excel(self, request):
         """导出需求列表为Excel文件"""
@@ -873,8 +887,6 @@ class TemplateConfigViewSet(viewsets.ModelViewSet):
         # 写入表头
         for col_idx, col_def in enumerate(columns):
             header = col_def['name']
-            if col_def['required']:
-                header += '*'
             sheet.write(0, col_idx, header, header_style)
             # 设置列宽
             sheet.col(col_idx).width = 4000  # 约20个字符

@@ -9,6 +9,8 @@ git remote set-url origin https://github.com/wenlanwang/ucm2.git
 git remote -v
 git config --get remote.origin.url
 
+查看git代码库：
+https://github.com/wenlanwang/ucm2/commits/master
 ======================================
 创建快照
 ======================================

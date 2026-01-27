@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Card, Table, Button, message, Space, Tag, Modal, DatePicker, Select, Input } from 'antd';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, DatePicker, Select, Input } from 'antd';
 import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../services/api';
@@ -133,68 +133,54 @@ export default function RequirementList() {
     }
   };
 
-  const handleDelete = (id: number) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这条需求吗？',
-      onOk: async () => {
-        try {
-          await api.delete(`/requirements/${id}/`);
-          message.success('删除成功');
-          loadData();
-        } catch (error) {
-          message.error('删除失败');
-        }
-      }
-    });
+  const handleDelete = async (id: number) => {
+    try {
+      await api.delete(`/requirements/${id}/`);
+      message.success('删除成功');
+      // 从本地状态移除数据
+      setData(prevData => prevData.filter(item => item.id !== id));
+      loadCounts();
+    } catch (error) {
+      message.error('删除失败');
+    }
   };
 
-  const handleBatchDelete = () => {
+  const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请选择要删除的记录');
       return;
     }
 
-    Modal.confirm({
-      title: '确认批量删除',
-      content: `确定要删除选中的 ${selectedRowKeys.length} 条记录吗？`,
-      onOk: async () => {
-        try {
-          await api.post('/requirements/batch_delete/', {
-            requirement_ids: selectedRowKeys
-          });
-          message.success('批量删除成功');
-          setSelectedRowKeys([]);
-          loadData();
-        } catch (error) {
-          message.error('批量删除失败');
-        }
-      }
-    });
+    try {
+      await api.post('/requirements/batch_delete/', {
+        requirement_ids: selectedRowKeys
+      });
+      message.success('批量删除成功');
+      // 从本地状态移除数据
+      setData(prevData => prevData.filter(item => !selectedRowKeys.includes(item.id)));
+      setSelectedRowKeys([]);
+      loadCounts();
+    } catch (error) {
+      message.error('批量删除失败');
+    }
   };
 
-  const handleBatchComplete = () => {
+  const handleBatchComplete = async () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请选择要完成的记录');
       return;
     }
 
-    Modal.confirm({
-      title: '确认批量完成',
-      content: `确定要将选中的 ${selectedRowKeys.length} 条记录标记为已处理吗？`,
-      onOk: async () => {
-        try {
-          await api.post('/requirements/batch_complete/', {
-            requirement_ids: selectedRowKeys
-          });
-          message.success('批量完成成功');
-          setSelectedRowKeys([]);
-          loadData();
-        } catch (error) {
-          message.error('批量完成失败');
-        }
-      }
-    });
+    try {
+      await api.post('/requirements/batch_complete/', {
+        requirement_ids: selectedRowKeys
+      });
+      message.success('批量完成成功');
+      setSelectedRowKeys([]);
+      loadData();
+    } catch (error) {
+      message.error('批量完成失败');
+    }
   };
 
   const handleExport = async () => {
@@ -337,14 +323,20 @@ export default function RequirementList() {
               完成
             </Button>
           )}
-          <Button
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record.id)}
+          <Popconfirm
+            title="确认删除?"
+            onConfirm={() => handleDelete(record.id)}
+            okText="确定"
+            cancelText="取消"
           >
-            删除
-          </Button>
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+            >
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       ),
     },

@@ -51,6 +51,8 @@ export default function RequirementRegister() {
   const [isAllValid, setIsAllValid] = useState(false);
   const [fileList, setFileList] = useState<any[]>([]);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const nextRowId = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -73,7 +75,30 @@ export default function RequirementRegister() {
     const allValid = tableData.every(row => row.validation.isValid);
     setIsAllValid(allValid && tableData.length > 0);
   }, [tableData]);
-  
+
+  // 自动选择最近的可选日期（优先周三和周六）
+  const selectNearestAvailableDate = (dates: string[]): dayjs.Dayjs | null => {
+    if (!dates || dates.length === 0) return null;
+
+    const today = dayjs();
+    const currentWeekStart = today.startOf('week');
+
+    // 生成本周及未来几周的周三和周六日期列表
+    const priorityOrder: string[] = [];
+    for (let week = 0; week < 8; week++) {
+      const wednesday = currentWeekStart.add(3 + week * 7, 'day').format('YYYY-MM-DD');
+      const saturday = currentWeekStart.add(6 + week * 7, 'day').format('YYYY-MM-DD');
+      priorityOrder.push(wednesday, saturday);
+    }
+
+    // 找到第一个在可选日期中且未过期的日期
+    const selectedDate = priorityOrder.find(date =>
+      dates.includes(date) && dayjs(date).isAfter(today, 'day')
+    );
+
+    return selectedDate ? dayjs(selectedDate) : null;
+  };
+
   const loadAvailableDates = async () => {
     try {
       const response = await api.get('/requirements/available_dates/');
@@ -81,28 +106,10 @@ export default function RequirementRegister() {
       setAvailableDates(dates);
       setDeadlines(response.data.deadlines);
 
-      // 自动选择最近的可选日期（优先周三和周六）
-      if (dates && dates.length > 0) {
-        const today = dayjs();
-        const currentWeekStart = today.startOf('week'); // 周日作为一周开始
-
-        // 生成本周及未来几周的周三和周六日期列表
-        const priorityOrder: string[] = [];
-        for (let week = 0; week < 8; week++) { // 预留8周
-          const weekOffset = week;
-          const wednesday = currentWeekStart.add(3 + weekOffset * 7, 'day').format('YYYY-MM-DD');
-          const saturday = currentWeekStart.add(6 + weekOffset * 7, 'day').format('YYYY-MM-DD');
-          priorityOrder.push(wednesday, saturday);
-        }
-
-        // 找到第一个在可选日期中且未过期的日期
-        const selectedDate = priorityOrder.find(date =>
-          dates.includes(date) && dayjs(date).isAfter(today, 'day')
-        );
-
-        if (selectedDate) {
-          setUcmChangeDate(dayjs(selectedDate));
-        }
+      // 自动选择最近的可选日期
+      const autoSelectedDate = selectNearestAvailableDate(dates);
+      if (autoSelectedDate) {
+        setUcmChangeDate(autoSelectedDate);
       }
     } catch (error) {
       message.error('加载可用日期失败');
@@ -297,7 +304,10 @@ export default function RequirementRegister() {
   const handleTabChange = (key: string) => {
     setActiveTab(key as 'import' | 'modify' | 'delete');
     setTableData([]);
-    setUcmChangeDate(null);
+
+    // 重新自动选择日期
+    const autoSelectedDate = selectNearestAvailableDate(availableDates);
+    setUcmChangeDate(autoSelectedDate);
   };
   
   const handleAddRow = useCallback(() => {
@@ -825,11 +835,22 @@ export default function RequirementRegister() {
   
   // 构建表格列
   const tableColumns = useMemo(() => {
+    console.log('tableColumns - currentPage:', currentPage, 'pageSize:', pageSize);
     const columns = [
+      {
+        title: '序号',
+        width: 60,
+        fixed: 'left' as const,
+        render: (_: any, __: any, index: number) => {
+          const seqNum = (currentPage - 1) * pageSize + index + 1;
+          console.log('序号计算 - currentPage:', currentPage, 'pageSize:', pageSize, 'index:', index, '结果:', seqNum);
+          return <span>{seqNum}</span>;
+        },
+      },
       {
         title: '校验',
         width: 60,
-        fixed: 'right' as const,
+        fixed: 'left' as const,
         render: (_: any, row: RequirementRow) => (
           row.validation.isValid ? (
             <CheckCircleOutlined style={{ color: '#52c41a', fontSize: '18px' }} />
@@ -841,7 +862,7 @@ export default function RequirementRegister() {
       {
         title: '操作',
         width: 100,
-        fixed: 'right' as const,
+        fixed: 'left' as const,
         render: (_: any, row: RequirementRow) => (
           <Space size="small">
             <Button
@@ -862,9 +883,9 @@ export default function RequirementRegister() {
     
     // 添加模板列
     const templateCols = Array.isArray(templateColumns) ? templateColumns : [];
-    
+
     templateCols.forEach(col => {
-      columns.push({
+      const columnConfig: any = {
         title: (
           <span>
             {col.name}
@@ -874,11 +895,19 @@ export default function RequirementRegister() {
         dataIndex: col.name,
         width: 150,
         render: (_: any, row: RequirementRow) => renderEditableCell(row, col.name),
-      });
+      };
+
+      // 固定名称列在左侧
+      if (col.name === '名称') {
+        columnConfig.fixed = 'left';
+        columnConfig.width = 200;
+      }
+
+      columns.push(columnConfig);
     });
     
     return columns;
-  }, [templateColumns, handleCopyRow, handleDeleteRow, renderEditableCell]);
+  }, [templateColumns, handleCopyRow, handleDeleteRow, renderEditableCell, currentPage, pageSize]);
   
   return (
     <div>
@@ -915,47 +944,69 @@ export default function RequirementRegister() {
         />
         
         {/* 操作按钮 */}
-        <div style={{ marginBottom: 16 }}>
-          <Space wrap>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={handleDownloadTemplate}
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }}>
+          <Button
+            type="primary"
+            icon={<UploadOutlined />}
+            onClick={() => setUploadModalVisible(true)}
+          >
+            导入需求
+          </Button>
+          <Button
+            icon={<PlusOutlined />}
+            onClick={handleAddRow}
+            style={{ marginLeft: 8 }}
+          >
+            新增行
+          </Button>
+          <span style={{ borderLeft: '1px solid #d9d9d9', height: '24px', margin: '0 8px' }}></span>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={handleDownloadTemplate}
+          >
+            下载模板
+          </Button>
+          <Space size={8}>
+            <Tooltip
+              title={tableData.length === 0 ? '请先添加数据' : (isAllValid ? '校验已通过（所有数据校验成功）' : '点击校验数据')}
             >
-              下载模板
-            </Button>
-            <Button
-              icon={<CheckCircleOutlined />}
-              onClick={handleValidateAll}
-              loading={loading}
-            >
-              校验
-            </Button>
-            <Button
-              type="primary"
-              onClick={handleSubmit}
-              loading={submitting}
-              disabled={!isAllValid || !ucmChangeDate || tableData.length === 0}
-            >
-              登记需求
-            </Button>
+              <Button
+                icon={<CheckCircleOutlined />}
+                onClick={handleValidateAll}
+                loading={loading}
+                disabled={tableData.length === 0}
+                style={{
+                  backgroundColor: tableData.length === 0 ? '#d9d9d9' : (isAllValid ? '#52c41a' : '#1890ff'),
+                  borderColor: tableData.length === 0 ? '#d9d9d9' : (isAllValid ? '#52c41a' : '#1890ff'),
+                  color: 'white',
+                  marginLeft: 8
+                }}
+              >
+                校验
+              </Button>
+            </Tooltip>
+            <Tag color={tableData.length === 0 ? 'default' : (isAllValid ? 'green' : 'blue')}>
+              {tableData.length === 0 ? '无数据' : (isAllValid ? '已通过' : '可校验')}
+            </Tag>
           </Space>
-        </div>
-        
-        {/* 数据操作按钮 */}
-        <div style={{ marginBottom: 16 }}>
-          <Space wrap>
-            <Button
-              icon={<PlusOutlined />}
-              onClick={handleAddRow}
-            >
-              新增行
-            </Button>
-            <Button
-              icon={<UploadOutlined />}
-              onClick={() => setUploadModalVisible(true)}
-            >
-              导入需求
-            </Button>
+          <Space size={8}>
+            <Tooltip title={!isAllValid || !ucmChangeDate || tableData.length === 0 ? '校验通过后，才可登记需求' : '可以提交登记'}>
+              <Button
+                onClick={handleSubmit}
+                loading={submitting}
+                disabled={!isAllValid || !ucmChangeDate || tableData.length === 0}
+                style={{
+                  backgroundColor: (!isAllValid || !ucmChangeDate || tableData.length === 0) ? '#d9d9d9' : '#52c41a',
+                  borderColor: (!isAllValid || !ucmChangeDate || tableData.length === 0) ? '#d9d9d9' : '#52c41a',
+                  color: 'white'
+                }}
+              >
+                登记需求
+              </Button>
+            </Tooltip>
+            <Tag color={isAllValid && ucmChangeDate && tableData.length > 0 ? 'green' : 'default'}>
+              {isAllValid && ucmChangeDate && tableData.length > 0 ? '可提交' : '需先校验'}
+            </Tag>
           </Space>
         </div>
         
@@ -965,7 +1016,22 @@ export default function RequirementRegister() {
           dataSource={tableData}
           rowKey="id"
           scroll={{ x: 'max-content' }}
-          pagination={false}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 行`,
+            showQuickJumper: true,
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size);
+            },
+            onShowSizeChange: (current, size) => {
+              setCurrentPage(1);
+              setPageSize(size);
+            },
+          }}
           size="small"
         />
         
