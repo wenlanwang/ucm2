@@ -41,11 +41,19 @@ export default function RequirementList() {
 
   // 新增状态
   const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [weekBoundaries, setWeekBoundaries] = useState({
+    minWeekOffset: -100,
+    maxWeekOffset: 1
+  });
   const [weeklyDates, setWeeklyDates] = useState<WeeklyDate[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedType, setSelectedType] = useState<'import' | 'modify' | 'delete'>('import');
   const [dateStatistics, setDateStatistics] = useState<DateStatistics>({});
-  const [templateColumns, setTemplateColumns] = useState<any[]>([]);
+  const [templateColumnsByType, setTemplateColumnsByType] = useState<{
+    import: any[];
+    modify: any[];
+    delete: any[];
+  }>({ import: [], modify: [], delete: [] });
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
@@ -72,6 +80,25 @@ export default function RequirementList() {
     import: <ImportOutlined />,
     delete: <DeleteOutlined />,
     modify: <EditOutlined />
+  };
+
+  // 列名样式配置
+  const typeColumnStyles = {
+    import: {
+      backgroundColor: '#e6f7ff',
+      borderColor: '#1890ff',
+      textColor: '#0050b3'
+    },
+    modify: {
+      backgroundColor: '#fff7e6',
+      borderColor: '#fa8c16',
+      textColor: '#d46b08'
+    },
+    delete: {
+      backgroundColor: '#fff1f0',
+      borderColor: '#f5222d',
+      textColor: '#cf1322'
+    }
   };
 
   // 加载周日期列表
@@ -104,6 +131,19 @@ export default function RequirementList() {
         params: { week_offset: weekOffset }
       });
       setWeeklyDates(response.data.dates);
+
+      // 更新边界信息
+      if (response.data.boundaries) {
+        setWeekBoundaries({
+          minWeekOffset: response.data.boundaries.min_week_offset,
+          maxWeekOffset: response.data.boundaries.max_week_offset
+        });
+        console.log('=== 日期边界信息 ===');
+        console.log('最小周偏移:', response.data.boundaries.min_week_offset);
+        console.log('最大周偏移:', response.data.boundaries.max_week_offset);
+        console.log('当前周偏移:', weekOffset);
+        console.log('==================');
+      }
 
       // 如果还没有选中日期，默认选中第一个
       if (!selectedDate && response.data.dates.length > 0) {
@@ -150,25 +190,23 @@ export default function RequirementList() {
       const response = await api.get('/templates/');
       console.log('=== 模板API返回数据 ===');
       console.log('response.data:', response.data);
-      
+
       // 后端返回分页数据结构：{ count, results }
       const templates = response.data.results || response.data;
       console.log('templates 数量:', templates.length);
-      
-      if (templates.length > 0) {
-        const template = templates.find((t: any) => t.template_type === 'import');
-        console.log('找到的导入模板:', template);
-        
-        if (template) {
-          const columns = template.get_column_definitions || [];
-          console.log('设置的列配置:', columns);
-          setTemplateColumns(columns);
-        } else {
-          console.error('未找到导入类型的模板');
+
+      const columnsMap = { import: [], modify: [], delete: [] };
+
+      templates.forEach((t: any) => {
+        if (columnsMap.hasOwnProperty(t.template_type)) {
+          const columns = t.get_column_definitions || [];
+          console.log(`加载 ${t.template_type} 模板列配置:`, columns);
+          columnsMap[t.template_type] = columns;
         }
-      } else {
-        console.error('模板列表为空');
-      }
+      });
+
+      console.log('所有模板列配置:', columnsMap);
+      setTemplateColumnsByType(columnsMap);
     } catch (error) {
       console.error('加载模板配置失败:', error);
     }
@@ -287,9 +325,21 @@ export default function RequirementList() {
       width: 120,
       render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
     },
-    // 动态列（根据模板配置）
-    ...templateColumns.map((col: any) => ({
-      title: col.name,
+    // 动态列（根据选中的类型对应的模板配置）
+    ...(templateColumnsByType[selectedType] || []).map((col: any) => ({
+      title: (
+        <div style={{
+          backgroundColor: typeColumnStyles[selectedType].backgroundColor,
+          borderLeft: `3px solid ${typeColumnStyles[selectedType].borderColor}`,
+          padding: '4px 8px',
+          color: typeColumnStyles[selectedType].textColor,
+          fontWeight: 'bold',
+          lineHeight: '1.2',
+          fontSize: '13px'
+        }}>
+          {col.name}
+        </div>
+      ),
       dataIndex: ['requirement_data_dict', col.name],
       width: 120,
       ellipsis: true,
@@ -354,7 +404,8 @@ export default function RequirementList() {
   const allColumns = [...leftFixedColumns, ...scrollableColumns, ...rightFixedColumns];
 
   console.log('=== 列配置调试信息 ===');
-  console.log('templateColumns 数量:', templateColumns.length);
+  console.log('当前选中类型:', selectedType);
+  console.log(`${selectedType} 模板列数量:`, templateColumnsByType[selectedType]?.length || 0);
   console.log('leftFixedColumns 数量:', leftFixedColumns.length);
   console.log('scrollableColumns 数量:', scrollableColumns.length);
   console.log('rightFixedColumns 数量:', rightFixedColumns.length);
@@ -421,7 +472,7 @@ export default function RequirementList() {
               setWeekOffset(weekOffset - 1);
               setSelectedDate(''); // 清空选中状态，等待新日期加载
             }}
-            disabled={weekOffset <= -100}
+            disabled={weekOffset <= weekBoundaries.minWeekOffset}
           />
           {weeklyDates.map(date => (
             <div
@@ -432,7 +483,7 @@ export default function RequirementList() {
                 padding: 8,
                 border: selectedDate === date.date ? '2px solid #69b1ff' : '1px solid #d9d9d9',
                 borderRadius: 6,
-                backgroundColor: selectedDate === date.date ? '#e6f7ff' : '#fff',
+                backgroundColor: '#fff',
                 cursor: 'pointer'
               }}
               onClick={() => {
@@ -502,6 +553,7 @@ export default function RequirementList() {
               setWeekOffset(weekOffset + 1);
               setSelectedDate(''); // 清空选中状态，等待新日期加载
             }}
+            disabled={weekOffset >= weekBoundaries.maxWeekOffset}
           />
           </div>
           <Button

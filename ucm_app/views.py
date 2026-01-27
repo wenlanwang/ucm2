@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.http import HttpResponse
 import json
 import xlrd
-from datetime import datetime
+from datetime import datetime, time
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
@@ -645,7 +645,9 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
     def weekly_dates(self, request):
         """获取指定周的周三、周六日期列表"""
         try:
+            import math
             from datetime import timedelta
+            from django.db.models import Min
 
             week_offset = int(request.query_params.get('week_offset', 0))
             now = timezone.now()
@@ -685,7 +687,34 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 }
             ]
 
-            return Response({'dates': dates})
+            # 计算边界信息
+            # 查找最早有数据的日期
+            earliest_date_result = UCMRequirement.objects.aggregate(Min('ucm_change_date'))
+            earliest_date = earliest_date_result['ucm_change_date__min']
+
+            if earliest_date:
+                # 将date对象转换为datetime对象，以便与now相减
+                if not hasattr(earliest_date, 'hour'):
+                    # earliest_date是date对象，需要转换为datetime
+                    earliest_date = datetime.combine(earliest_date, time(0, 0, 0))
+                # 计算最早日期相对于当前日期的周偏移
+                days_diff = (earliest_date - now).days
+                min_week_offset = math.floor(days_diff / 7)
+            else:
+                min_week_offset = 0
+
+            # 最大week_offset固定为1（只允许到下周）
+            max_week_offset = 1
+
+            boundaries = {
+                'min_week_offset': min_week_offset,
+                'max_week_offset': max_week_offset
+            }
+
+            return Response({
+                'dates': dates,
+                'boundaries': boundaries
+            })
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
