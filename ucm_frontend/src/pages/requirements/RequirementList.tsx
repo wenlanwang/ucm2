@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Button, message, Space, Tag, Popconfirm, Input } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, LeftOutlined, RightOutlined, ImportOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -49,6 +49,11 @@ export default function RequirementList() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
+  // 筛选状态
+  const [filterSubmitter, setFilterSubmitter] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterKeyword, setFilterKeyword] = useState<string>('');
+
   const { user } = useAuthStore();
 
   const requirementTypeText = {
@@ -64,9 +69,9 @@ export default function RequirementList() {
   };
 
   const requirementTypeIcons = {
-    import: '📦',
-    delete: '🔴',
-    modify: '📝'
+    import: <ImportOutlined />,
+    delete: <DeleteOutlined />,
+    modify: <EditOutlined />
   };
 
   // 加载周日期列表
@@ -274,7 +279,7 @@ export default function RequirementList() {
       title: '登记时间',
       dataIndex: 'submit_time',
       width: 150,
-      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
+      render: (time: string) => <span style={{ whiteSpace: 'nowrap' }}>{dayjs(time).format('YYYY-MM-DD HH:mm:ss')}</span>,
     },
     {
       title: 'UCM变更日期',
@@ -290,20 +295,6 @@ export default function RequirementList() {
       ellipsis: true,
       render: (value: any) => value || '-'
     })),
-    {
-      title: '备注',
-      dataIndex: 'note',
-      width: 200,
-      render: (text: string, record: Requirement) => (
-        <Input.TextArea
-          defaultValue={text || ''}
-          onBlur={(e) => handleNoteChange(record.id, e.target.value)}
-          autoSize={{ minRows: 1, maxRows: 3 }}
-          placeholder="点击编辑备注"
-          style={{ resize: 'none' }}
-        />
-      )
-    },
   ];
 
   // 构建右侧固定列
@@ -388,20 +379,43 @@ export default function RequirementList() {
   // 计算总数
   const totalCount = currentStats.import.count + currentStats.delete.count + currentStats.modify.count;
 
+  // 筛选逻辑
+  const filteredData = data.filter(item => {
+    // 需求人筛选
+    if (filterSubmitter !== 'all' && item.submitter_name !== filterSubmitter) {
+      return false;
+    }
+    // 状态筛选
+    if (filterStatus !== 'all' && item.status !== filterStatus) {
+      return false;
+    }
+    // 关键词搜索
+    if (filterKeyword) {
+      const keyword = filterKeyword.toLowerCase();
+      const searchableText = [
+        item.device_name,
+        item.ip,
+        item.submitter_name
+      ].join(' ').toLowerCase();
+      if (!searchableText.includes(keyword)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // 获取所有唯一的需求人列表
+  const uniqueSubmitters = Array.from(new Set(data.map(item => item.submitter_name))).sort();
+
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>需求列表</h1>
 
-      <Card
-        extra={
-          <Button icon={<ExportOutlined />} onClick={() => message.info('导出功能待实现')}>
-            导出Excel
-          </Button>
-        }
-      >
+      <Card>
         {/* 日期导航 */}
-        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-          <Button
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flex: 1 }}>
+            <Button
             icon={<LeftOutlined />}
             onClick={() => {
               setWeekOffset(weekOffset - 1);
@@ -415,10 +429,10 @@ export default function RequirementList() {
               style={{
                 flex: 1,
                 maxWidth: 400,
-                padding: 16,
-                border: selectedDate === date.date ? '2px solid #1890ff' : '1px solid #d9d9d9',
-                borderRadius: 8,
-                backgroundColor: selectedDate === date.date ? '#f0f7ff' : '#fff',
+                padding: 8,
+                border: selectedDate === date.date ? '2px solid #69b1ff' : '1px solid #d9d9d9',
+                borderRadius: 6,
+                backgroundColor: selectedDate === date.date ? '#e6f7ff' : '#fff',
                 cursor: 'pointer'
               }}
               onClick={() => {
@@ -439,28 +453,28 @@ export default function RequirementList() {
                 }
               }}
             >
-              <div style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
                 {date.label}
               </div>
 
               {/* 类型统计 */}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                 {(['import', 'delete', 'modify'] as const).map(type => (
                   <div
                     key={type}
                     style={{
                       flex: 1,
-                      padding: 8,
+                      padding: 6,
                       backgroundColor:
                         selectedDate === date.date && selectedType === type
-                          ? '#1890ff'
+                          ? '#91d5ff'
                           : (dateStatistics[date.date]?.[type]?.count || 0) > 0
-                          ? '#f0f0f0'
+                          ? '#f5f5f5'
                           : '#fafafa',
                       borderRadius: 4,
                       textAlign: 'center',
                       cursor: 'pointer',
-                      border: selectedDate === date.date && selectedType === type ? '2px solid #096dd9' : '1px solid #d9d9d9',
+                      border: selectedDate === date.date && selectedType === type ? '2px solid #69b1ff' : '1px solid #d9d9d9',
                       opacity: (dateStatistics[date.date]?.[type]?.count || 0) === 0 ? 0.5 : 1
                     }}
                     onClick={(e) => {
@@ -471,10 +485,10 @@ export default function RequirementList() {
                       }
                     }}
                   >
-                    <div style={{ fontSize: 12, marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, marginBottom: 3 }}>
                       {requirementTypeIcons[type]} {requirementTypeText[type]}
                     </div>
-                    <div style={{ fontSize: 16, fontWeight: 'bold', color: selectedDate === date.date && selectedType === type ? '#fff' : '#000' }}>
+                    <div style={{ fontSize: 13, fontWeight: 'bold', color: selectedDate === date.date && selectedType === type ? '#0050b3' : '#000' }}>
                       {dateStatistics[date.date]?.[type]?.count || 0}
                     </div>
                   </div>
@@ -489,6 +503,13 @@ export default function RequirementList() {
               setSelectedDate(''); // 清空选中状态，等待新日期加载
             }}
           />
+          </div>
+          <Button
+            icon={<ExportOutlined />}
+            onClick={() => message.info('导出功能待实现')}
+          >
+            导出Excel
+          </Button>
         </div>
 
         {/* 当前选择提示 */}
@@ -519,14 +540,86 @@ export default function RequirementList() {
           </Space>
         </div>
 
+        {/* 筛选功能 */}
+        <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 4 }}>
+          <Space wrap>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14, color: '#666' }}>需求人:</span>
+              <select
+                value={filterSubmitter}
+                onChange={(e) => {
+                  setFilterSubmitter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #d9d9d9', minWidth: 120 }}
+              >
+                <option value="all">全部</option>
+                {uniqueSubmitters.map(submitter => (
+                  <option key={submitter} value={submitter}>{submitter}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14, color: '#666' }}>状态:</span>
+              <select
+                value={filterStatus}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value);
+                  setCurrentPage(1);
+                }}
+                style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #d9d9d9', minWidth: 120 }}
+              >
+                <option value="all">全部</option>
+                <option value="pending">待处理</option>
+                <option value="processed">已处理</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14, color: '#666' }}>搜索:</span>
+              <Input
+                placeholder="设备名称/IP"
+                value={filterKeyword}
+                onChange={(e) => {
+                  setFilterKeyword(e.target.value);
+                  setCurrentPage(1);
+                }}
+                allowClear
+                style={{ width: 200 }}
+              />
+            </div>
+
+            {filterSubmitter !== 'all' || filterStatus !== 'all' || filterKeyword ? (
+              <Button
+                size="small"
+                onClick={() => {
+                  setFilterSubmitter('all');
+                  setFilterStatus('all');
+                  setFilterKeyword('');
+                  setCurrentPage(1);
+                }}
+              >
+                清除筛选
+              </Button>
+            ) : null}
+          </Space>
+
+          {/* 筛选结果提示 */}
+          <div style={{ marginTop: 12, fontSize: 13, color: '#999' }}>
+            筛选结果: {filteredData.length} 条 / 共 {data.length} 条
+          </div>
+        </div>
+
         {/* 表格 */}
         <Table
           rowSelection={rowSelection}
           columns={allColumns}
-          dataSource={data}
+          dataSource={filteredData}
           loading={loading}
           rowKey="id"
-          scroll={{ x: 'max-content', y: 500 }}
+          size="small"
+          scroll={{ x: 'max-content', y: 440 }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,
