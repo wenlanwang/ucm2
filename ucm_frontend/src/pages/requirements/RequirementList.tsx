@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, DatePicker, Select, Input } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, SearchOutlined } from '@ant-design/icons';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input } from 'antd';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
-
-const { Option } = Select;
 
 interface Requirement {
   id: number;
@@ -19,25 +16,38 @@ interface Requirement {
   status: 'pending' | 'processed';
   processor_name?: string;
   process_time?: string;
+  note?: string;
+  requirement_data_dict?: Record<string, any>;
+}
+
+interface WeeklyDate {
+  date: string;
+  day_type: string;
+  label: string;
+}
+
+interface DateStatistics {
+  [date: string]: {
+    import: { count: number; pending: number; processed: number };
+    delete: { count: number; pending: number; processed: number };
+    modify: { count: number; pending: number; processed: number };
+  };
 }
 
 export default function RequirementList() {
-  const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
   const [data, setData] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
-  const [filters, setFilters] = useState({
-    submitter: '',
-    requirement_type: '',
-    ucm_change_date: null as dayjs.Dayjs | null,
-    search: ''
-  });
-  const [counts, setCounts] = useState({
-    pending: 0,
-    processed: 0
-  });
-  const [highlightIds, setHighlightIds] = useState<number[]>([]);
+
+  // 新增状态
+  const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [weeklyDates, setWeeklyDates] = useState<WeeklyDate[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedType, setSelectedType] = useState<'import' | 'modify' | 'delete'>('import');
+  const [dateStatistics, setDateStatistics] = useState<DateStatistics>({});
+  const [templateColumns, setTemplateColumns] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   const { user } = useAuthStore();
 
@@ -53,46 +63,73 @@ export default function RequirementList() {
     delete: 'red'
   };
 
-  // 处理从需求登记页面跳转过来的状态（只执行一次）
+  const requirementTypeIcons = {
+    import: '📦',
+    delete: '🔴',
+    modify: '📝'
+  };
+
+  // 加载周日期列表
   useEffect(() => {
-    if (location.state?.filters) {
-      const { filters: stateFilters } = location.state;
-      setFilters({
-        submitter: stateFilters.submitter || '',
-        requirement_type: stateFilters.requirement_type || '',
-        ucm_change_date: stateFilters.ucm_change_date ? dayjs(stateFilters.ucm_change_date) : null,
-        search: ''
+    loadWeeklyDates();
+  }, [weekOffset]);
+
+  // 加载选中日期的统计
+  useEffect(() => {
+    if (weeklyDates.length > 0) {
+      weeklyDates.forEach(date => loadDateStatistics(date.date));
+    }
+  }, [weeklyDates]);
+
+  // 加载需求列表
+  useEffect(() => {
+    if (selectedDate && selectedType) {
+      loadData();
+    }
+  }, [selectedDate, selectedType]);
+
+  // 加载模板列配置
+  useEffect(() => {
+    loadTemplateColumns();
+  }, []);
+
+  const loadWeeklyDates = async () => {
+    try {
+      const response = await api.get('/requirements/weekly_dates/', {
+        params: { week_offset: weekOffset }
       });
-      setActiveTab(stateFilters.status || 'pending');
+      setWeeklyDates(response.data.dates);
+
+      // 如果还没有选中日期，默认选中第一个
+      if (!selectedDate && response.data.dates.length > 0) {
+        setSelectedDate(response.data.dates[0].date);
+      }
+    } catch (error) {
+      message.error('加载日期列表失败');
     }
-  }, []); // 空依赖数组，只执行一次
-  
-  // 加载数据和数量
-  useEffect(() => {
-    loadData();
-    loadCounts();
-  }, [activeTab, filters]);
-  
-  // 高亮显示刚登记的记录，3秒后自动取消
-  useEffect(() => {
-    if (location.state?.highlightIds && location.state.highlightIds.length > 0) {
-      setHighlightIds(location.state.highlightIds);
-      const timer = setTimeout(() => {
-        setHighlightIds([]);
-      }, 3000);
-      return () => clearTimeout(timer);
+  };
+
+  const loadDateStatistics = async (date: string) => {
+    try {
+      const response = await api.get('/requirements/date_statistics/', {
+        params: { date }
+      });
+      setDateStatistics(prev => ({
+        ...prev,
+        [date]: response.data.statistics
+      }));
+    } catch (error) {
+      console.error('加载统计失败:', error);
     }
-  }, [location.state?.highlightIds]);
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const params: any = { status: activeTab };
-      
-      if (filters.submitter) params.submitter = filters.submitter;
-      if (filters.requirement_type) params.requirement_type = filters.requirement_type;
-      if (filters.ucm_change_date) params.ucm_change_date = filters.ucm_change_date.format('YYYY-MM-DD');
-      if (filters.search) params.search = filters.search;
+      const params: any = {
+        ucm_change_date: selectedDate,
+        requirement_type: selectedType
+      };
 
       const response = await api.get('/requirements/', { params });
       setData(response.data.results || response.data);
@@ -103,33 +140,48 @@ export default function RequirementList() {
     }
   };
 
-  const loadCounts = async () => {
+  const loadTemplateColumns = async () => {
     try {
-      // 加载待处理数量
-      const pendingParams: any = { status: 'pending', page_size: 1 };
-      if (filters.submitter) pendingParams.submitter = filters.submitter;
-      if (filters.requirement_type) pendingParams.requirement_type = filters.requirement_type;
-      if (filters.ucm_change_date) pendingParams.ucm_change_date = filters.ucm_change_date.format('YYYY-MM-DD');
-      if (filters.search) pendingParams.search = filters.search;
+      const response = await api.get('/templates/');
+      console.log('=== 模板API返回数据 ===');
+      console.log('response.data:', response.data);
       
-      const pendingResponse = await api.get('/requirements/', { params: pendingParams });
-      const pendingCount = pendingResponse.data.count || 
-                          (pendingResponse.data.results ? pendingResponse.data.results.length : 0);
-
-      // 加载已处理数量
-      const processedParams: any = { status: 'processed', page_size: 1 };
-      if (filters.submitter) processedParams.submitter = filters.submitter;
-      if (filters.requirement_type) processedParams.requirement_type = filters.requirement_type;
-      if (filters.ucm_change_date) processedParams.ucm_change_date = filters.ucm_change_date.format('YYYY-MM-DD');
-      if (filters.search) processedParams.search = filters.search;
+      // 后端返回分页数据结构：{ count, results }
+      const templates = response.data.results || response.data;
+      console.log('templates 数量:', templates.length);
       
-      const processedResponse = await api.get('/requirements/', { params: processedParams });
-      const processedCount = processedResponse.data.count || 
-                            (processedResponse.data.results ? processedResponse.data.results.length : 0);
-
-      setCounts({ pending: pendingCount, processed: processedCount });
+      if (templates.length > 0) {
+        const template = templates.find((t: any) => t.template_type === 'import');
+        console.log('找到的导入模板:', template);
+        
+        if (template) {
+          const columns = template.get_column_definitions || [];
+          console.log('设置的列配置:', columns);
+          setTemplateColumns(columns);
+        } else {
+          console.error('未找到导入类型的模板');
+        }
+      } else {
+        console.error('模板列表为空');
+      }
     } catch (error) {
-      console.error('加载数量失败:', error);
+      console.error('加载模板配置失败:', error);
+    }
+  };
+
+  const handleNoteChange = async (id: number, value: string) => {
+    try {
+      await api.patch(`/requirements/${id}/`, { note: value });
+      message.success('备注已保存');
+
+      // 更新本地状态
+      setData(prevData =>
+        prevData.map(item =>
+          item.id === id ? { ...item, note: value } : item
+        )
+      );
+    } catch (error) {
+      message.error('保存失败');
     }
   };
 
@@ -137,31 +189,23 @@ export default function RequirementList() {
     try {
       await api.delete(`/requirements/${id}/`);
       message.success('删除成功');
-      // 从本地状态移除数据
       setData(prevData => prevData.filter(item => item.id !== id));
-      loadCounts();
+      // 重新加载统计
+      if (selectedDate) loadDateStatistics(selectedDate);
     } catch (error) {
       message.error('删除失败');
     }
   };
 
-  const handleBatchDelete = async () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要删除的记录');
-      return;
-    }
-
+  const handleComplete = async (id: number) => {
     try {
-      await api.post('/requirements/batch_delete/', {
-        requirement_ids: selectedRowKeys
-      });
-      message.success('批量删除成功');
-      // 从本地状态移除数据
-      setData(prevData => prevData.filter(item => !selectedRowKeys.includes(item.id)));
-      setSelectedRowKeys([]);
-      loadCounts();
+      await api.post(`/requirements/${id}/mark_as_processed/`);
+      message.success('标记完成成功');
+      loadData();
+      // 重新加载统计
+      if (selectedDate) loadDateStatistics(selectedDate);
     } catch (error) {
-      message.error('批量删除失败');
+      message.error('操作失败');
     }
   };
 
@@ -178,102 +222,56 @@ export default function RequirementList() {
       message.success('批量完成成功');
       setSelectedRowKeys([]);
       loadData();
+      // 重新加载统计
+      if (selectedDate) loadDateStatistics(selectedDate);
     } catch (error) {
       message.error('批量完成失败');
     }
   };
 
-  const handleExport = async () => {
-    try {
-      setLoading(true);
-      
-      const params: any = { status: activeTab };
-      
-      if (filters.submitter) params.submitter = filters.submitter;
-      if (filters.requirement_type) params.requirement_type = filters.requirement_type;
-      if (filters.ucm_change_date) params.start_date = filters.ucm_change_date.format('YYYY-MM-DD');
-      if (filters.ucm_change_date) params.end_date = filters.ucm_change_date.format('YYYY-MM-DD');
-      if (filters.search) params.search = filters.search;
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要删除的记录');
+      return;
+    }
 
-      // 调用导出API
-      const response = await api.get('/requirements/export_excel/', {
-        params,
-        responseType: 'blob', // 重要：指定响应类型为blob
+    try {
+      await api.post('/requirements/batch_delete/', {
+        requirement_ids: selectedRowKeys
       });
-
-      // 创建下载链接
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // 从响应头获取文件名
-      const contentDisposition = response.headers['content-disposition'];
-      let filename = 'UCM需求列表.xlsx';
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
-      
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      message.success('导出成功');
+      message.success('批量删除成功');
+      setSelectedRowKeys([]);
+      setData(prevData => prevData.filter(item => !selectedRowKeys.includes(item.id)));
+      // 重新加载统计
+      if (selectedDate) loadDateStatistics(selectedDate);
     } catch (error) {
-      console.error('导出失败:', error);
-      message.error('导出失败');
-    } finally {
-      setLoading(false);
+      message.error('批量删除失败');
     }
   };
 
-  const handleComplete = async (id: number) => {
-    try {
-      await api.post(`/requirements/${id}/mark_as_processed/`);
-      message.success('标记完成成功');
-      loadData();
-    } catch (error) {
-      message.error('操作失败');
-    }
-  };
-
-  const columns = [
+  // 构建左侧固定列
+  const leftFixedColumns = [
     {
       title: '序号',
-      dataIndex: 'id',
       width: 60,
-    },
-    {
-      title: '需求类型',
-      dataIndex: 'requirement_type',
-      width: 80,
-      render: (type: string) => (
-        <Tag color={requirementTypeColors[type as keyof typeof requirementTypeColors]}>
-          {requirementTypeText[type as keyof typeof requirementTypeText]}
-        </Tag>
-      ),
-    },
-    {
-      title: '名称',
-      dataIndex: 'device_name',
-      width: 150,
-    },
-    {
-      title: 'IP地址',
-      dataIndex: 'ip',
-      width: 120,
+      fixed: 'left' as const,
+      render: (_: any, __: any, index: number) => {
+        // 全局计算序号，考虑分页
+        return (currentPage - 1) * pageSize + index + 1;
+      },
     },
     {
       title: '需求人',
       dataIndex: 'submitter_name',
       width: 100,
+      fixed: 'left' as const,
     },
+  ];
+
+  // 构建可滚动列
+  const scrollableColumns = [
     {
-      title: '需求时间',
+      title: '登记时间',
       dataIndex: 'submit_time',
       width: 150,
       render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
@@ -284,44 +282,52 @@ export default function RequirementList() {
       width: 120,
       render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
     },
+    // 动态列（根据模板配置）
+    ...templateColumns.map((col: any) => ({
+      title: col.name,
+      dataIndex: ['requirement_data_dict', col.name],
+      width: 120,
+      ellipsis: true,
+      render: (value: any) => value || '-'
+    })),
     {
-      title: '状态',
-      dataIndex: 'status',
-      width: 80,
-      render: (status: string) => (
-        <Tag color={status === 'processed' ? 'green' : 'orange'}>
-          {status === 'processed' ? '已处理' : '待处理'}
-        </Tag>
-      ),
+      title: '备注',
+      dataIndex: 'note',
+      width: 200,
+      render: (text: string, record: Requirement) => (
+        <Input.TextArea
+          defaultValue={text || ''}
+          onBlur={(e) => handleNoteChange(record.id, e.target.value)}
+          autoSize={{ minRows: 1, maxRows: 3 }}
+          placeholder="点击编辑备注"
+          style={{ resize: 'none' }}
+        />
+      )
     },
-    ...(activeTab === 'processed' ? [
-      {
-        title: '处理人',
-        dataIndex: 'processor_name',
-        width: 100,
-      },
-      {
-        title: '处理时间',
-        dataIndex: 'process_time',
-        width: 150,
-        render: (time: string) => time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-',
-      }
-    ] : []),
+  ];
+
+  // 构建右侧固定列
+  const rightFixedColumns = [
     {
       title: '操作',
-      width: 120,
+      width: 80,
       fixed: 'right' as const,
       render: (_: any, record: Requirement) => (
-        <Space>
-          {activeTab === 'pending' && (
-            <Button
-              size="small"
-              type="link"
-              icon={<CheckCircleOutlined />}
-              onClick={() => handleComplete(record.id)}
+        <Space size="small">
+          {record.status === 'pending' && (
+            <Popconfirm
+              title="确认完成?"
+              onConfirm={() => handleComplete(record.id)}
+              okText="确定"
+              cancelText="取消"
             >
-              完成
-            </Button>
+              <Button
+                size="small"
+                type="text"
+                icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                title="完成"
+              />
+            </Popconfirm>
           )}
           <Popconfirm
             title="确认删除?"
@@ -332,15 +338,38 @@ export default function RequirementList() {
             <Button
               size="small"
               danger
+              type="text"
               icon={<DeleteOutlined />}
-            >
-              删除
-            </Button>
+              title="删除"
+            />
           </Popconfirm>
         </Space>
       ),
     },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 80,
+      fixed: 'right' as const,
+      render: (status: string) => (
+        <Tag color={status === 'processed' ? 'green' : 'orange'}>
+          {status === 'processed' ? '已处理' : '待处理'}
+        </Tag>
+      ),
+    },
   ];
+
+  // 组合所有列
+  const allColumns = [...leftFixedColumns, ...scrollableColumns, ...rightFixedColumns];
+
+  console.log('=== 列配置调试信息 ===');
+  console.log('templateColumns 数量:', templateColumns.length);
+  console.log('leftFixedColumns 数量:', leftFixedColumns.length);
+  console.log('scrollableColumns 数量:', scrollableColumns.length);
+  console.log('rightFixedColumns 数量:', rightFixedColumns.length);
+  console.log('allColumns 总数:', allColumns.length);
+  console.log('allColumns 标题列表:', allColumns.map(col => col.title));
+  console.log('========================');
 
   const rowSelection = {
     selectedRowKeys,
@@ -349,129 +378,172 @@ export default function RequirementList() {
     },
   };
 
+  // 获取当前选中日期的统计
+  const currentStats = dateStatistics[selectedDate] || {
+    import: { count: 0, pending: 0, processed: 0 },
+    delete: { count: 0, pending: 0, processed: 0 },
+    modify: { count: 0, pending: 0, processed: 0 }
+  };
+
+  // 计算总数
+  const totalCount = currentStats.import.count + currentStats.delete.count + currentStats.modify.count;
+
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>需求列表</h1>
-      
+
       <Card
         extra={
-          <Space>
-            {activeTab === 'pending' && (
-              <>
-                <Button
-                  icon={<CheckCircleOutlined />}
-                  onClick={handleBatchComplete}
-                  disabled={selectedRowKeys.length === 0}
-                >
-                  批量完成
-                </Button>
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={handleBatchDelete}
-                  disabled={selectedRowKeys.length === 0}
-                >
-                  批量删除
-                </Button>
-              </>
-            )}
-            <Button
-              icon={<ExportOutlined />}
-              onClick={handleExport}
-            >
-              导出Excel
-            </Button>
-          </Space>
+          <Button icon={<ExportOutlined />} onClick={() => message.info('导出功能待实现')}>
+            导出Excel
+          </Button>
         }
-        tabList={[
-          {
-            key: 'pending',
-            tab: `待处理需求 (${counts.pending})`,
-          },
-          {
-            key: 'processed',
-            tab: `已处理需求 (${counts.processed})`,
-          },
-        ]}
-        activeTabKey={activeTab}
-        onTabChange={(key) => {
-          setActiveTab(key as 'pending' | 'processed');
-          setSelectedRowKeys([]);
-        }}
       >
-        <div style={{ marginBottom: 16 }}>
-          <Space wrap>
-            <Input
-              placeholder="搜索名称或IP"
-              prefix={<SearchOutlined />}
-              value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              style={{ width: 200 }}
-            />
-            
-            <Select
-              placeholder="需求类型"
-              value={filters.requirement_type}
-              onChange={(value) => setFilters({ ...filters, requirement_type: value })}
-              style={{ width: 120 }}
-              allowClear
+        {/* 日期导航 */}
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <Button
+            icon={<LeftOutlined />}
+            onClick={() => {
+              setWeekOffset(weekOffset - 1);
+              setSelectedDate(''); // 清空选中状态，等待新日期加载
+            }}
+            disabled={weekOffset <= -100}
+          />
+          {weeklyDates.map(date => (
+            <div
+              key={date.date}
+              style={{
+                flex: 1,
+                maxWidth: 400,
+                padding: 16,
+                border: selectedDate === date.date ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                borderRadius: 8,
+                backgroundColor: selectedDate === date.date ? '#f0f7ff' : '#fff',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                setSelectedDate(date.date);
+                // 如果当前选中的类型在新日期下有数据，保持不变；否则选择第一个有数据的类型
+                const stats = dateStatistics[date.date];
+                if (stats && stats[selectedType]?.count > 0) {
+                  // 保持当前类型
+                } else {
+                  // 选择第一个有数据的类型
+                  if (stats?.import?.count > 0) {
+                    setSelectedType('import');
+                  } else if (stats?.delete?.count > 0) {
+                    setSelectedType('delete');
+                  } else if (stats?.modify?.count > 0) {
+                    setSelectedType('modify');
+                  }
+                }
+              }}
             >
-              <Option value="import">导入</Option>
-              <Option value="modify">修改</Option>
-              <Option value="delete">删除</Option>
-            </Select>
+              <div style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                {date.label}
+              </div>
 
-            <DatePicker
-              placeholder="UCM变更日期"
-              value={filters.ucm_change_date}
-              onChange={(date) => setFilters({ ...filters, ucm_change_date: date })}
-            />
+              {/* 类型统计 */}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                {(['import', 'delete', 'modify'] as const).map(type => (
+                  <div
+                    key={type}
+                    style={{
+                      flex: 1,
+                      padding: 8,
+                      backgroundColor:
+                        selectedDate === date.date && selectedType === type
+                          ? '#1890ff'
+                          : (dateStatistics[date.date]?.[type]?.count || 0) > 0
+                          ? '#f0f0f0'
+                          : '#fafafa',
+                      borderRadius: 4,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      border: selectedDate === date.date && selectedType === type ? '2px solid #096dd9' : '1px solid #d9d9d9',
+                      opacity: (dateStatistics[date.date]?.[type]?.count || 0) === 0 ? 0.5 : 1
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if ((dateStatistics[date.date]?.[type]?.count || 0) > 0) {
+                        setSelectedDate(date.date);
+                        setSelectedType(type);
+                      }
+                    }}
+                  >
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>
+                      {requirementTypeIcons[type]} {requirementTypeText[type]}
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 'bold', color: selectedDate === date.date && selectedType === type ? '#fff' : '#000' }}>
+                      {dateStatistics[date.date]?.[type]?.count || 0}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <Button
+            icon={<RightOutlined />}
+            onClick={() => {
+              setWeekOffset(weekOffset + 1);
+              setSelectedDate(''); // 清空选中状态，等待新日期加载
+            }}
+          />
+        </div>
 
-            {user?.is_staff && (
-              <Input
-                placeholder="申请人"
-                value={filters.submitter}
-                onChange={(e) => setFilters({ ...filters, submitter: e.target.value })}
-                style={{ width: 150 }}
-              />
-            )}
+        {/* 当前选择提示 */}
+        {selectedDate && (
+          <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
+            当前选中：{weeklyDates.find(d => d.date === selectedDate)?.label} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
+          </div>
+        )}
+
+        {/* 批量操作 */}
+        <div style={{ marginBottom: 16 }}>
+          <Space>
+            <Button
+              icon={<CheckCircleOutlined />}
+              onClick={handleBatchComplete}
+              disabled={selectedRowKeys.length === 0}
+            >
+              批量完成
+            </Button>
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleBatchDelete}
+              disabled={selectedRowKeys.length === 0}
+            >
+              批量删除
+            </Button>
           </Space>
         </div>
 
+        {/* 表格 */}
         <Table
           rowSelection={rowSelection}
-          columns={columns}
+          columns={allColumns}
           dataSource={data}
           loading={loading}
           rowKey="id"
-          scroll={{ x: 'max-content' }}
-          rowClassName={(record) => highlightIds.includes(record.id) ? 'highlight-row' : ''}
+          scroll={{ x: 'max-content', y: 500 }}
           pagination={{
-            pageSize: 10,
+            current: currentPage,
+            pageSize: pageSize,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total) => `共 ${total} 条记录`,
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size);
+            },
+            onShowSizeChange: (current, size) => {
+              setCurrentPage(1);
+              setPageSize(size);
+            },
           }}
         />
       </Card>
-      
-      <style>
-        {`
-          .highlight-row {
-            background-color: #e6f7ff !important;
-            animation: highlightFade 3s ease-out forwards;
-          }
-          
-          @keyframes highlightFade {
-            0% {
-              background-color: #e6f7ff;
-            }
-            100% {
-              background-color: transparent;
-            }
-          }
-        `}
-      </style>
     </div>
   );
 }

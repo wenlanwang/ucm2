@@ -3,11 +3,30 @@ fatal: unable to access 'https://github.com/wenlanwang/ucm2.git/  ': Recv failur
 
 不要全部copy，会有空格，留几个字母手工补齐：
 git remote remove origin
-git remote add origin https://github.com/wenlanwang/ucm2.git
-git remote set-url origin https://github.com/wenlanwang/ucm2.git
+git remote add origin "https://github.com/wenlanwang/ucm2.git"
+git remote set-url origin "https://github.com/wenlanwang/ucm2.git"
+
+$url = git config --get remote.origin.url
+Write-Host "[$url]"
 
 git remote -v
 git config --get remote.origin.url
+
+=================
+# 获取原始 URL
+$rawUrl = git config --get remote.origin.url
+
+# 使用正则移除开头和结尾的所有空白字符（包括 U+00A0, U+200B 等）
+$cleanUrl = $rawUrl -replace '^\s+|\s+$', ''
+
+# 强制重设
+git remote remove origin
+git remote add origin "$cleanUrl"
+
+# 验证
+$newUrl = git config --get remote.origin.url
+Write-Host "Final URL: [$newUrl]"
+================
 
 查看git代码库：
 https://github.com/wenlanwang/ucm2/commits/master
@@ -24,7 +43,10 @@ git commit -m "Backup: 列的可选值问题解决"
 
 # 3. 推送到 GitHub（完成云端备份）
 git push origin master
-
+---------------------------
+git add .
+git commit -m "update"
+git push          # ← 不需要任何参数！
 
 ======================================
 恢复快照

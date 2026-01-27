@@ -94,6 +94,7 @@ class UCMRequirement(models.Model):
     processor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_requirements', verbose_name='处理人')
     process_time = models.DateTimeField(null=True, blank=True, verbose_name='处理时间')
     requirement_data = models.TextField(verbose_name='需求数据(JSON)')
+    note = models.TextField(blank=True, null=True, verbose_name='备注')
     
     # 用于快速查询的冗余字段（从requirement_data中提取）
     device_name = models.CharField(max_length=200, verbose_name='名称')

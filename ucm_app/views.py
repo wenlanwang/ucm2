@@ -632,14 +632,119 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         """批量删除需求"""
         requirement_ids = request.data.get('requirement_ids', [])
         if not requirement_ids:
-            return Response({'error': '请选择要删除的记录'}, 
+            return Response({'error': '请选择要删除的记录'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         count, _ = UCMRequirement.objects.filter(
             id__in=requirement_ids
         ).delete()
-        
+
         return Response({'success': True, 'count': count})
+
+    @action(detail=False, methods=['get'])
+    def weekly_dates(self, request):
+        """获取指定周的周三、周六日期列表"""
+        try:
+            from datetime import timedelta
+
+            week_offset = int(request.query_params.get('week_offset', 0))
+            now = timezone.now()
+
+            # 计算目标周的周三和周六
+            # 本周三是相对于当前日期的第几天 (周一=0, 周三=2, 周六=5)
+            days_to_wednesday = (2 - now.weekday()) % 7
+            days_to_saturday = (5 - now.weekday()) % 7
+
+            # 加上周偏移
+            target_wednesday = now + timedelta(days=days_to_wednesday + week_offset * 7)
+            target_saturday = now + timedelta(days=days_to_saturday + week_offset * 7)
+
+            # 获取周标签
+            def get_week_label(offset):
+                if offset == 0:
+                    return '本周'
+                elif offset == 1:
+                    return '下周'
+                elif offset == -1:
+                    return '上周'
+                else:
+                    return f'{abs(offset)}周前' if offset < 0 else f'{offset}周后'
+
+            week_label = get_week_label(week_offset)
+
+            dates = [
+                {
+                    'date': target_wednesday.strftime('%Y-%m-%d'),
+                    'day_type': '周三',
+                    'label': f'{target_wednesday.strftime("%Y年%m月%d日")}（{week_label}三）'
+                },
+                {
+                    'date': target_saturday.strftime('%Y-%m-%d'),
+                    'day_type': '周六',
+                    'label': f'{target_saturday.strftime("%Y年%m月%d日")}（{week_label}六）'
+                }
+            ]
+
+            return Response({'dates': dates})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def date_statistics(self, request):
+        """获取指定日期的需求类型统计"""
+        try:
+            date_str = request.query_params.get('date')
+            if not date_str:
+                return Response({'error': '请指定日期'},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+            # 解析日期
+            from datetime import datetime
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+            # 统计各类型数量
+            statistics = {
+                'import': {'count': 0, 'pending': 0, 'processed': 0},
+                'delete': {'count': 0, 'pending': 0, 'processed': 0},
+                'modify': {'count': 0, 'pending': 0, 'processed': 0}
+            }
+
+            for req_type in ['import', 'delete', 'modify']:
+                # 总数
+                total_count = UCMRequirement.objects.filter(
+                    ucm_change_date=target_date,
+                    requirement_type=req_type
+                ).count()
+
+                # 待处理数
+                pending_count = UCMRequirement.objects.filter(
+                    ucm_change_date=target_date,
+                    requirement_type=req_type,
+                    status='pending'
+                ).count()
+
+                # 已处理数
+                processed_count = UCMRequirement.objects.filter(
+                    ucm_change_date=target_date,
+                    requirement_type=req_type,
+                    status='processed'
+                ).count()
+
+                statistics[req_type] = {
+                    'count': total_count,
+                    'pending': pending_count,
+                    'processed': processed_count
+                }
+
+            return Response({
+                'date': date_str,
+                'statistics': statistics
+            })
+        except ValueError:
+            return Response({'error': '日期格式错误，请使用 YYYY-MM-DD 格式'},
+                          status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'])
     def export_excel(self, request):

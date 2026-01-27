@@ -33,10 +33,15 @@ class UCMDeviceInventorySerializer(serializers.ModelSerializer):
 class UCMRequirementSerializer(serializers.ModelSerializer):
     submitter_name = serializers.CharField(source='submitter.username', read_only=True)
     processor_name = serializers.CharField(source='processor.username', read_only=True, allow_null=True)
-    
+    requirement_data_dict = serializers.SerializerMethodField()
+
     class Meta:
         model = UCMRequirement
         fields = '__all__'
+
+    def get_requirement_data_dict(self, obj):
+        """返回解析后的 requirement_data 字典"""
+        return obj.get_requirement_data_dict()
 
 
 class TemplateConfigSerializer(serializers.ModelSerializer):
