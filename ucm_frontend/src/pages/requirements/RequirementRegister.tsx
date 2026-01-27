@@ -215,6 +215,85 @@ export default function RequirementRegister() {
     return columnOptions[columnName] || [];
   };
 
+  // 校验单行数据
+  const validateRow = useCallback((rowData: Record<string, string>): ValidationResult => {
+    console.log('validateRow 被调用');
+    console.log('  - rowData:', rowData);
+    console.log('  - vendorVersionData 长度:', vendorVersionData.length);
+
+    const errors: Record<string, string> = {};
+    const warnings: Record<string, string> = {};
+
+    // 确保templateColumns是数组
+    const columns = Array.isArray(templateColumns) ? templateColumns : [];
+
+    columns.forEach(col => {
+      const value = rowData[col.name]?.trim() || '';
+
+      // 必填字段校验
+      if (col.required && !value) {
+        errors[col.name] = '此字段为必填项';
+      }
+
+      // IP地址格式校验
+      if (col.name === 'IP' && value) {
+        const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+        if (!ipv4Pattern.test(value)) {
+          errors[col.name] = 'IP地址格式不正确（IPv4）';
+        }
+      }
+
+      // 可选值校验
+      if (columnOptions[col.name] && value) {
+        if (!columnOptions[col.name].includes(value)) {
+          errors[col.name] = '不在可选值清单中';
+        }
+      }
+    });
+
+    // 级联校验：设备类型、厂商、版本
+    const deviceType = rowData['设备类型'];
+    const manufacturer = rowData['厂商'];
+    const version = rowData['版本'];
+
+    console.log('  - 级联校验:', { deviceType, manufacturer, version });
+
+    // 规则：如果选择了设备类型，必须选择厂商
+    if (deviceType && !manufacturer) {
+      errors['厂商'] = '请选择厂商';
+    }
+
+    // 规则：如果选择了厂商，必须选择版本
+    if (manufacturer && !version) {
+      errors['版本'] = '请选择版本';
+    }
+
+    // 规则：如果三者都填了，检查组合是否有效
+    if (deviceType && manufacturer && version) {
+      const isValidCombination = vendorVersionData.some(
+        item => item.device_type === deviceType &&
+                item.manufacturer === manufacturer &&
+                item.version === version
+      );
+
+      console.log('  - 组合校验结果:', isValidCombination);
+
+      if (!isValidCombination) {
+        errors['版本'] = '设备类型、厂商、版本组合不匹配';
+      }
+    }
+
+    const result = {
+      is_valid: Object.keys(errors).length === 0,
+      errors,
+      warnings
+    };
+
+    console.log('  - 校验结果:', result);
+
+    return result;
+  }, [templateColumns, columnOptions, vendorVersionData]);
+
   const handleTabChange = (key: string) => {
     setActiveTab(key as 'import' | 'modify' | 'delete');
     setTableData([]);
@@ -293,6 +372,8 @@ export default function RequirementRegister() {
   }, [tableData]);
   
   const handleCellChange = useCallback((rowId: number, columnName: string, value: string) => {
+    console.log(`handleCellChange 被调用: rowId=${rowId}, columnName=${columnName}, value=${value}`);
+
     setTableData(prevData => {
       return prevData.map(row => {
         if (row.id === rowId) {
@@ -303,85 +384,40 @@ export default function RequirementRegister() {
             // 重新选择设备类型，清空厂商和版本
             newData['厂商'] = '';
             newData['版本'] = '';
+            console.log('  - 级联清空厂商和版本');
           } else if (columnName === '厂商') {
             // 重新选择厂商，清空版本
             newData['版本'] = '';
+            console.log('  - 级联清空版本');
           }
 
+          console.log('  - 更新后的数据:', newData);
+
           const validation = validateRow(newData);
-          return { ...row, data: newData, validation };
+
+          console.log('  - 原validation:', row.validation);
+          console.log('  - 新validation:', validation);
+
+          // 强制创建新对象，确保 React 检测到变化
+          const updatedRow = {
+            ...row,
+            data: newData,
+            validation: {
+              isValid: validation.is_valid,
+              errors: { ...validation.errors },
+              warnings: { ...validation.warnings }
+            }
+          };
+
+          console.log('  - 更新后的行:', updatedRow);
+
+          return updatedRow;
         }
         return row;
       });
     });
-  }, [vendorVersionData, columnOptions]);
-  
-  const validateRow = (rowData: Record<string, string>): ValidationResult => {
-    const errors: Record<string, string> = {};
-    const warnings: Record<string, string> = {};
+  }, [validateRow]);
 
-    // 确保templateColumns是数组
-    const columns = Array.isArray(templateColumns) ? templateColumns : [];
-
-    columns.forEach(col => {
-      const value = rowData[col.name]?.trim() || '';
-
-      // 必填字段校验
-      if (col.required && !value) {
-        errors[col.name] = '此字段为必填项';
-      }
-
-      // IP地址格式校验
-      if (col.name === 'IP' && value) {
-        const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
-        if (!ipv4Pattern.test(value)) {
-          errors[col.name] = 'IP地址格式不正确（IPv4）';
-        }
-      }
-
-      // 可选值校验
-      if (columnOptions[col.name] && value) {
-        if (!columnOptions[col.name].includes(value)) {
-          errors[col.name] = '不在可选值清单中';
-        }
-      }
-    });
-
-    // 级联校验：设备类型、厂商、版本
-    const deviceType = rowData['设备类型'];
-    const manufacturer = rowData['厂商'];
-    const version = rowData['版本'];
-
-    // 规则：如果选择了设备类型，必须选择厂商
-    if (deviceType && !manufacturer) {
-      errors['厂商'] = '请选择厂商';
-    }
-
-    // 规则：如果选择了厂商，必须选择版本
-    if (manufacturer && !version) {
-      errors['版本'] = '请选择版本';
-    }
-
-    // 规则：如果三者都填了，检查组合是否有效
-    if (deviceType && manufacturer && version) {
-      const isValidCombination = vendorVersionData.some(
-        item => item.device_type === deviceType &&
-                item.manufacturer === manufacturer &&
-                item.version === version
-      );
-
-      if (!isValidCombination) {
-        errors['版本'] = '设备类型、厂商、版本组合不匹配';
-      }
-    }
-
-    return {
-      is_valid: Object.keys(errors).length === 0,
-      errors,
-      warnings
-    };
-  };
-  
   const handleValidateAll = async () => {
     setLoading(true);
     try {

@@ -1,6 +1,7 @@
 PS D:\dev\ucm2> git push origin master
 fatal: unable to access 'https://github.com/wenlanwang/ucm2.git/  ': Recv failure: Connection was reset
 
+不要全部copy，会有空格，留几个字母手工补齐：
 git remote remove origin
 git remote add origin https://github.com/wenlanwang/ucm2.git
 git remote set-url origin https://github.com/wenlanwang/ucm2.git
