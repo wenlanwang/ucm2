@@ -101,6 +101,46 @@ export default function RequirementList() {
     }
   };
 
+  // 类型按钮样式配置
+  const typeButtonStyles = {
+    import: {
+      unselected: {
+        backgroundColor: '#ffffff',
+        borderColor: '#91d5ff',
+        textColor: '#0050b3'
+      },
+      selected: {
+        backgroundColor: '#bae7ff',
+        borderColor: '#1890ff',
+        textColor: '#0050b3'
+      }
+    },
+    modify: {
+      unselected: {
+        backgroundColor: '#ffffff',
+        borderColor: '#ffd591',
+        textColor: '#d46b08'
+      },
+      selected: {
+        backgroundColor: '#ffe7ba',
+        borderColor: '#fa8c16',
+        textColor: '#d46b08'
+      }
+    },
+    delete: {
+      unselected: {
+        backgroundColor: '#ffffff',
+        borderColor: '#ffa39e',
+        textColor: '#cf1322'
+      },
+      selected: {
+        backgroundColor: '#ffccc7',
+        borderColor: '#f5222d',
+        textColor: '#cf1322'
+      }
+    }
+  };
+
   // 加载周日期列表
   useEffect(() => {
     loadWeeklyDates();
@@ -195,7 +235,7 @@ export default function RequirementList() {
       const templates = response.data.results || response.data;
       console.log('templates 数量:', templates.length);
 
-      const columnsMap = { import: [], modify: [], delete: [] };
+      const columnsMap: Record<string, any[]> = { import: [], modify: [], delete: [] };
 
       templates.forEach((t: any) => {
         if (columnsMap.hasOwnProperty(t.template_type)) {
@@ -206,7 +246,7 @@ export default function RequirementList() {
       });
 
       console.log('所有模板列配置:', columnsMap);
-      setTemplateColumnsByType(columnsMap);
+      setTemplateColumnsByType(columnsMap as { import: any[]; modify: any[]; delete: any[] });
     } catch (error) {
       console.error('加载模板配置失败:', error);
     }
@@ -474,14 +514,20 @@ export default function RequirementList() {
             }}
             disabled={weekOffset <= weekBoundaries.minWeekOffset}
           />
-          {weeklyDates.map(date => (
+          {weeklyDates.map(date => {
+            const isCurrentWeek = date.label.includes('本周');
+            return (
             <div
               key={date.date}
               style={{
                 flex: 1,
                 maxWidth: 400,
                 padding: 8,
-                border: selectedDate === date.date ? '2px solid #69b1ff' : '1px solid #d9d9d9',
+                border: selectedDate === date.date
+                  ? '2px solid #69b1ff'
+                  : isCurrentWeek
+                  ? '2px solid #1890ff'
+                  : '1px solid #d9d9d9',
                 borderRadius: 6,
                 backgroundColor: '#fff',
                 cursor: 'pointer'
@@ -505,48 +551,72 @@ export default function RequirementList() {
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
-                {date.label}
+                {isCurrentWeek ? (
+                  <>
+                    <span>
+                      {date.label.split('（')[0]}（
+                    </span>
+                    <span style={{ color: selectedDate === date.date ? '#1890ff' : '#69b1ff', fontWeight: 'bold' }}>
+                      {date.label.split('（')[1].split('）')[0]}
+                    </span>
+                    <span>
+                      ）
+                    </span>
+                  </>
+                ) : (
+                  date.label
+                )}
               </div>
 
               {/* 类型统计 */}
               <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                {(['import', 'delete', 'modify'] as const).map(type => (
+                {(['import', 'delete', 'modify'] as const).map(type => {
+                  const hasData = (dateStatistics[date.date]?.[type]?.count || 0) > 0;
+                  const isSelected = selectedDate === date.date && selectedType === type && hasData;
+                  const styleConfig = hasData
+                    ? (isSelected ? typeButtonStyles[type].selected : typeButtonStyles[type].unselected)
+                    : null;
+
+                  return (
                   <div
                     key={type}
                     style={{
                       flex: 1,
-                      padding: 6,
-                      backgroundColor:
-                        selectedDate === date.date && selectedType === type
-                          ? '#91d5ff'
-                          : (dateStatistics[date.date]?.[type]?.count || 0) > 0
-                          ? '#f5f5f5'
-                          : '#fafafa',
+                      padding: '6px 8px',
+                      backgroundColor: hasData ? styleConfig!.backgroundColor : '#f5f5f5',
+                      borderLeft: hasData && isSelected ? `3px solid ${styleConfig!.borderColor}` : 'none',
                       borderRadius: 4,
                       textAlign: 'center',
-                      cursor: 'pointer',
-                      border: selectedDate === date.date && selectedType === type ? '2px solid #69b1ff' : '1px solid #d9d9d9',
-                      opacity: (dateStatistics[date.date]?.[type]?.count || 0) === 0 ? 0.5 : 1
+                      cursor: hasData ? 'pointer' : 'not-allowed',
+                      border: hasData && isSelected
+                        ? `2px solid ${styleConfig!.borderColor}`
+                        : hasData
+                        ? `1px solid ${styleConfig!.borderColor}`
+                        : '1px solid #d9d9d9',
+                      opacity: hasData ? 1 : 0.5,
+                      transition: 'all 0.2s ease'
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if ((dateStatistics[date.date]?.[type]?.count || 0) > 0) {
+                      if (hasData) {
                         setSelectedDate(date.date);
                         setSelectedType(type);
                       }
                     }}
                   >
-                    <div style={{ fontSize: 11, marginBottom: 3 }}>
+                    <div style={{ fontSize: 13, marginBottom: 3, color: hasData ? styleConfig!.textColor : '#999999' }}>
                       {requirementTypeIcons[type]} {requirementTypeText[type]}
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 'bold', color: selectedDate === date.date && selectedType === type ? '#0050b3' : '#000' }}>
+                    <div style={{ fontSize: 13, fontWeight: 'bold', color: hasData ? styleConfig!.textColor : '#999999' }}>
                       {dateStatistics[date.date]?.[type]?.count || 0}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
-          ))}
+            );
+          })}
           <Button
             icon={<RightOutlined />}
             onClick={() => {
