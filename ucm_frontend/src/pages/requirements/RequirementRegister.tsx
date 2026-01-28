@@ -58,7 +58,6 @@ export default function RequirementRegister() {
   
   // 加载可用UCM日期
   useEffect(() => {
-    console.log('RequirementRegister: Component mounted, loading available dates...');
     loadAvailableDates();
   }, []);
   
@@ -88,22 +87,16 @@ export default function RequirementRegister() {
       dayjs(date).isAfter(today, 'day') || dayjs(date).isSame(today, 'day')
     );
 
-    console.log('selectNearestAvailableDate: futureDates =', futureDates);
-
     if (futureDates.length === 0) return null;
 
     // 按日期排序，返回第一个（最近的）
     futureDates.sort((a, b) => dayjs(a).diff(dayjs(b)));
-
-    console.log('selectNearestAvailableDate: sorted futureDates =', futureDates);
-    console.log('selectNearestAvailableDate: selectedDate =', futureDates[0]);
 
     return dayjs(futureDates[0]);
   };
 
   const loadAvailableDates = async () => {
     try {
-      console.log('loadAvailableDates: Fetching dates from API...');
       const response = await api.get('/requirements/available_dates/');
       const dates = response.data.dates;
       setAvailableDates(dates);
@@ -111,13 +104,10 @@ export default function RequirementRegister() {
 
       // 总是自动选择最近的可选日期，确保每次加载都有默认值
       const autoSelectedDate = selectNearestAvailableDate(dates);
-      console.log('loadAvailableDates: autoSelectedDate =', autoSelectedDate?.format('YYYY-MM-DD'));
       if (autoSelectedDate) {
         setUcmChangeDate(autoSelectedDate);
-        console.log('loadAvailableDates: ucmChangeDate set to', autoSelectedDate.format('YYYY-MM-DD'));
       }
     } catch (error) {
-      console.error('loadAvailableDates: Error loading dates', error);
       message.error('加载可用日期失败');
     }
   };

@@ -214,8 +214,6 @@ export default function RequirementList() {
     if (!dates || dates.length === 0) return null;
 
     const now = dayjs();
-    console.log('selectDefaultDateByRule - now:', now.format('YYYY-MM-DD HH:mm:ss'));
-    console.log('selectDefaultDateByRule - now.day():', now.day()); // 0=周日, 1=周一, ..., 6=周六
 
     // 计算本周三和本周六
     const currentDay = now.day(); // 0=周日, 1=周一, ..., 6=周六
@@ -226,13 +224,6 @@ export default function RequirementList() {
     const saturday = now.add(saturdayOffset, 'day');
     const nextWednesday = wednesday.add(7, 'day');
 
-    console.log('selectDefaultDateByRule - wednesdayOffset:', wednesdayOffset);
-    console.log('selectDefaultDateByRule - saturdayOffset:', saturdayOffset);
-    console.log('selectDefaultDateByRule - wednesday:', wednesday.format('YYYY-MM-DD'));
-    console.log('selectDefaultDateByRule - saturday:', saturday.format('YYYY-MM-DD'));
-    console.log('selectDefaultDateByRule - nextWednesday:', nextWednesday.format('YYYY-MM-DD'));
-    console.log('selectDefaultDateByRule - available dates:', dates);
-
     let targetDate: dayjs.Dayjs;
 
     // 判断当前时间区间
@@ -240,27 +231,21 @@ export default function RequirementList() {
     if (now.isBefore(wednesday.endOf('day'))) {
       // 当前时间 < 周三 23:59，默认本周三
       targetDate = wednesday;
-      console.log('selectDefaultDateByRule - 选择本周三:', targetDate.format('YYYY-MM-DD'));
     } else if (now.isBefore(saturday.endOf('day'))) {
       // 周三 23:59 <= 当前时间 < 周六 23:59，默认本周六
       targetDate = saturday;
-      console.log('selectDefaultDateByRule - 选择本周六:', targetDate.format('YYYY-MM-DD'));
     } else {
       // 当前时间 >= 周六 23:59，默认下周三
       targetDate = nextWednesday;
-      console.log('selectDefaultDateByRule - 选择下周三:', targetDate.format('YYYY-MM-DD'));
     }
 
     const targetDateStr = targetDate.format('YYYY-MM-DD');
-    console.log('selectDefaultDateByRule - targetDateStr:', targetDateStr);
 
     // 检查目标日期是否在可用日期中
     if (dates.includes(targetDateStr)) {
-      console.log('selectDefaultDateByRule - 找到匹配日期');
       return targetDate;
     }
 
-    console.log('selectDefaultDateByRule - 未找到匹配日期');
     // 如果目标日期不在可用日期中，返回 null
     return null;
   };
@@ -268,31 +253,22 @@ export default function RequirementList() {
   // 加载可用日期
   const loadAvailableDates = async () => {
     try {
-      const response = await api.get('/requirements/available_dates/');
+      const response = await api.get('/requirements/list_dates/');
       const dates = response.data.dates || [];
       setAvailableDates(dates);
-
-      console.log('loadAvailableDates - available dates:', dates);
 
       // 检查是否有 URL 参数中的日期（用于从需求登记页跳转）
       const dateParam = searchParams.get('ucm_change_date');
       const highlightIdsParam = searchParams.get('highlight_ids');
 
-      console.log('loadAvailableDates - dateParam:', dateParam);
-      console.log('loadAvailableDates - highlightIdsParam:', highlightIdsParam);
-
       // 如果有高亮ID参数，说明是从需求登记页跳转过来的，使用参数日期
       if (dateParam && highlightIdsParam) {
         setSelectedDate(dateParam);
-        console.log('loadAvailableDates - 使用参数日期:', dateParam);
       } else {
         // 否则按规则选择默认日期（刷新页面或直接访问时）
         const defaultDate = selectDefaultDateByRule(dates);
         if (defaultDate) {
           setSelectedDate(defaultDate.format('YYYY-MM-DD'));
-          console.log('loadAvailableDates - 使用规则日期:', defaultDate.format('YYYY-MM-DD'));
-        } else {
-          console.log('loadAvailableDates - 未找到合适的默认日期');
         }
       }
     } catch (error) {
@@ -650,7 +626,9 @@ export default function RequirementList() {
                   return false;
                 }}
                 placeholder="选择日期"
-                format="YYYY年MM月DD日（ddd）"
+                format="YYYY-MM-DD（ddd）"
+                placement="bottomLeft"
+                dropdownStyle={{ maxHeight: '400px', overflow: 'auto' }}
                 style={{ width: 210 }}
               />
             </div>
@@ -704,7 +682,7 @@ export default function RequirementList() {
         {/* 当前选择提示 */}
         {selectedDate && (
           <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
-            当前选中：{dayjs(selectedDate).format('YYYY年MM月DD日（ddd）')} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
+            当前选中：{dayjs(selectedDate).format('YYYY-MM-DD（ddd）')} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
           </div>
         )}
 

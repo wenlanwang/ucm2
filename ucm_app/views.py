@@ -257,21 +257,23 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             available_dates = []
             deadlines = {}
 
-            # 计算本周三（截止时间为周三 23:59:59）
+            # 计算本周三
             this_wednesday = now + timedelta(days=(2 - now.weekday()) % 7)
             this_wednesday = this_wednesday.replace(hour=0, minute=0, second=0, microsecond=0)
-            wednesday_deadline = this_wednesday.replace(hour=23, minute=59, second=59)
 
-            # 计算本周六（截止时间为周六 23:59:59）
+            # 计算本周六
             this_saturday = now + timedelta(days=(5 - now.weekday()) % 7)
             this_saturday = this_saturday.replace(hour=0, minute=0, second=0, microsecond=0)
-            saturday_deadline = this_saturday.replace(hour=23, minute=59, second=59)
 
             # 计算下周三
             next_wednesday = this_wednesday + timedelta(days=7)
 
             # 计算下周六
             next_saturday = this_saturday + timedelta(days=7)
+
+            # 检查是否可选（周三提前7小时，周六提前31小时）
+            wednesday_deadline = this_wednesday - timedelta(hours=config.wednesday_deadline_hours)
+            saturday_deadline = this_saturday - timedelta(hours=config.saturday_deadline_hours)
 
             candidates = [
                 (this_wednesday, wednesday_deadline, '周三'),
@@ -280,15 +282,74 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 (next_saturday, saturday_deadline + timedelta(days=7), '下周六')
             ]
 
+            # 星期映射
+            weekday_map = {
+                0: '周一',
+                1: '周二',
+                2: '周三',
+                3: '周四',
+                4: '周五',
+                5: '周六',
+                6: '周日'
+            }
+
             for date, deadline, day_type in candidates:
-                if now <= deadline:
+                if now < deadline:
                     date_str = date.strftime('%Y-%m-%d')
+                    # 获取截止日期的星期几
+                    deadline_weekday = weekday_map[deadline.weekday()]
+                    deadline_str = f"{deadline.strftime('%Y-%m-%d')}{deadline_weekday} {deadline.strftime('%H:%M')}"
                     available_dates.append(date_str)
-                    deadlines[date_str] = f"{day_type}UCM变更，最晚登记时间在{deadline.strftime('%Y-%m-%d %H:%M:%S')}前"
+                    deadlines[date_str] = f"{day_type}UCM变更，最晚登记时间在{deadline_str}前"
 
             return Response({
                 'dates': available_dates,
                 'deadlines': deadlines
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'])
+    def list_dates(self, request):
+        """获取需求列表页的可选日期（返回所有有数据的日期，不考虑截止时间）"""
+        try:
+            from django.db.models import Count
+            from datetime import timedelta
+
+            now = timezone.now()
+
+            # 计算本周三和本周六
+            this_wednesday = now + timedelta(days=(2 - now.weekday()) % 7)
+            this_wednesday = this_wednesday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            this_saturday = now + timedelta(days=(5 - now.weekday()) % 7)
+            this_saturday = this_saturday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            # 计算下周三和下周六
+            next_wednesday = this_wednesday + timedelta(days=7)
+            next_saturday = this_saturday + timedelta(days=7)
+
+            # 生成所有可能的周三和周六日期（过去8周到未来8周）
+            all_possible_dates = []
+            for week in range(-8, 9):
+                week_start = this_wednesday + timedelta(days=7 * week)
+                wednesday = week_start
+                saturday = week_start + timedelta(days=3)
+                all_possible_dates.append(wednesday.strftime('%Y-%m-%d'))
+                all_possible_dates.append(saturday.strftime('%Y-%m-%d'))
+
+            # 查询数据库，获取有数据的日期
+            requirements = UCMRequirement.objects.filter(
+                ucm_change_date__in=all_possible_dates
+            ).values('ucm_change_date').annotate(
+                count=Count('id')
+            ).order_by('ucm_change_date')
+
+            # 提取有数据的日期
+            list_dates = [req['ucm_change_date'] for req in requirements]
+
+            return Response({
+                'dates': list_dates
             })
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
