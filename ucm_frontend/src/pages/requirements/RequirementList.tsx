@@ -562,14 +562,10 @@ export default function RequirementList() {
   };
 
   // 获取当前选中日期的统计
-  const currentStats = dateStatistics[selectedDate] || {
-    import: { count: 0, pending: 0, processed: 0 },
-    delete: { count: 0, pending: 0, processed: 0 },
-    modify: { count: 0, pending: 0, processed: 0 }
-  };
+  const currentStats = dateStatistics;
 
-  // 计算总数
-  const totalCount = currentStats.import.count + currentStats.delete.count + currentStats.modify.count;
+  // 计算当前选中类型的总数
+  const totalCount = currentStats[selectedType]?.count || 0;
 
   // 筛选逻辑
   const filteredData = data.filter(item => {
