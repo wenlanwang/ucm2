@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, Input } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, LeftOutlined, RightOutlined, ImportOutlined, EditOutlined } from '@ant-design/icons';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker } from 'antd';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -20,35 +22,34 @@ interface Requirement {
   requirement_data_dict?: Record<string, any>;
 }
 
-interface WeeklyDate {
-  date: string;
-  day_type: string;
-  label: string;
-}
-
 interface DateStatistics {
-  [date: string]: {
-    import: { count: number; pending: number; processed: number };
-    delete: { count: number; pending: number; processed: number };
-    modify: { count: number; pending: number; processed: number };
-  };
+  import: { count: number; pending: number; processed: number };
+  delete: { count: number; pending: number; processed: number };
+  modify: { count: number; pending: number; processed: number };
 }
 
 export default function RequirementList() {
+  dayjs.locale('zh-cn');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const hasInitializedRef = useRef(false);
+  const initialSelectedDate = useRef<string | null>(null);
+
   const [data, setData] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
+  const [highlightIds, setHighlightIds] = useState<number[]>([]);
 
   // 新增状态
-  const [weekOffset, setWeekOffset] = useState<number>(0);
-  const [weekBoundaries, setWeekBoundaries] = useState({
-    minWeekOffset: -100,
-    maxWeekOffset: 1
-  });
-  const [weeklyDates, setWeeklyDates] = useState<WeeklyDate[]>([]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedType, setSelectedType] = useState<'import' | 'modify' | 'delete'>('import');
-  const [dateStatistics, setDateStatistics] = useState<DateStatistics>({});
+  const [dateStatistics, setDateStatistics] = useState<DateStatistics>({
+    import: { count: 0, pending: 0, processed: 0 },
+    modify: { count: 0, pending: 0, processed: 0 },
+    delete: { count: 0, pending: 0, processed: 0 }
+  });
   const [templateColumnsByType, setTemplateColumnsByType] = useState<{
     import: any[];
     modify: any[];
@@ -141,17 +142,59 @@ export default function RequirementList() {
     }
   };
 
-  // 加载周日期列表
+  // 处理URL参数
   useEffect(() => {
-    loadWeeklyDates();
-  }, [weekOffset]);
+    // 优先从 URL 参数读取
+    const dateParam = searchParams.get('ucm_change_date');
+    const typeParam = searchParams.get('requirement_type');
+    const submitterParam = searchParams.get('submitter');
+    const highlightIdsParam = searchParams.get('highlight_ids');
+
+    // 设置高亮ID
+    if (highlightIdsParam) {
+      const ids = highlightIdsParam.split(',').map(Number).filter(n => !isNaN(n));
+      if (ids.length > 0) {
+        setHighlightIds(ids);
+        setTimeout(() => {
+          setHighlightIds([]);
+        }, 5000);
+      }
+    }
+
+    // 如果有日期参数，直接设置日期
+    if (dateParam) {
+      setSelectedDate(dateParam);
+    }
+
+    // 设置登记类型
+    if (typeParam && ['import', 'modify', 'delete'].includes(typeParam)) {
+      setSelectedType(typeParam as 'import' | 'modify' | 'delete');
+    }
+
+    // 设置需求人筛选
+    if (submitterParam) {
+      setFilterSubmitter(submitterParam);
+    }
+  }, [searchParams]);
+
+  // 加载可用日期
+  useEffect(() => {
+    loadAvailableDates();
+  }, [searchParams]);
 
   // 加载选中日期的统计
   useEffect(() => {
-    if (weeklyDates.length > 0) {
-      weeklyDates.forEach(date => loadDateStatistics(date.date));
+    if (selectedDate) {
+      loadDateStatistics(selectedDate);
     }
-  }, [weeklyDates]);
+  }, [selectedDate]);
+
+  // 自动选择第一个有数据的类型
+  useEffect(() => {
+    if (dateStatistics && !searchParams.get('requirement_type')) {
+      selectFirstAvailableType(dateStatistics);
+    }
+  }, [dateStatistics, searchParams]);
 
   // 加载需求列表
   useEffect(() => {
@@ -165,46 +208,79 @@ export default function RequirementList() {
     loadTemplateColumns();
   }, []);
 
-  const loadWeeklyDates = async () => {
-    try {
-      const response = await api.get('/requirements/weekly_dates/', {
-        params: { week_offset: weekOffset }
-      });
-      setWeeklyDates(response.data.dates);
+// 自动选择最近的周三或周六
+  const selectNearestAvailableDate = (dates: string[]): dayjs.Dayjs | null => {
+    if (!dates || dates.length === 0) return null;
 
-      // 更新边界信息
-      if (response.data.boundaries) {
-        setWeekBoundaries({
-          minWeekOffset: response.data.boundaries.min_week_offset,
-          maxWeekOffset: response.data.boundaries.max_week_offset
-        });
-        console.log('=== 日期边界信息 ===');
-        console.log('最小周偏移:', response.data.boundaries.min_week_offset);
-        console.log('最大周偏移:', response.data.boundaries.max_week_offset);
-        console.log('当前周偏移:', weekOffset);
-        console.log('==================');
+    const today = dayjs();
+
+    // 生成本周及未来几周的周三和周六日期列表
+    const priorityDates: dayjs.Dayjs[] = [];
+    for (let week = 0; week < 8; week++) {
+      const weekStart = today.startOf('week').add(week, 'week');
+      const wednesday = weekStart.add(3, 'day');
+      const saturday = weekStart.add(6, 'day');
+
+      if (wednesday.isAfter(today, 'day') || wednesday.isSame(today, 'day')) {
+        priorityDates.push(wednesday);
       }
+      if (saturday.isAfter(today, 'day') || saturday.isSame(today, 'day')) {
+        priorityDates.push(saturday);
+      }
+    }
 
-      // 如果还没有选中日期，默认选中第一个
-      if (!selectedDate && response.data.dates.length > 0) {
-        setSelectedDate(response.data.dates[0].date);
+    // 找到第一个在可选日期中的日期
+    for (const date of priorityDates) {
+      if (dates.includes(date.format('YYYY-MM-DD'))) {
+        return date;
+      }
+    }
+
+    return null;
+  };
+
+  // 加载可用日期
+  const loadAvailableDates = async () => {
+    try {
+      const response = await api.get('/requirements/available_dates/');
+      const dates = response.data.dates || [];
+      setAvailableDates(dates);
+
+      // 检查是否有 URL 参数中的日期
+      const dateParam = searchParams.get('ucm_change_date');
+
+      // 如果没有 URL 参数且还没有选中日期，自动选择最近的周三或周六
+      if (!dateParam && !selectedDate) {
+        const autoSelectedDate = selectNearestAvailableDate(dates);
+        if (autoSelectedDate) {
+          setSelectedDate(autoSelectedDate.format('YYYY-MM-DD'));
+        }
       }
     } catch (error) {
-      message.error('加载日期列表失败');
+      console.error('加载可用日期失败:', error);
     }
   };
 
+  // 加载选中日期的统计
   const loadDateStatistics = async (date: string) => {
     try {
       const response = await api.get('/requirements/date_statistics/', {
         params: { date }
       });
-      setDateStatistics(prev => ({
-        ...prev,
-        [date]: response.data.statistics
-      }));
+      setDateStatistics(response.data.statistics);
     } catch (error) {
       console.error('加载统计失败:', error);
+    }
+  };
+
+  // 自动选择第一个有数据的类型
+  const selectFirstAvailableType = (stats: DateStatistics) => {
+    if (stats.import?.count > 0) {
+      setSelectedType('import');
+    } else if (stats.modify?.count > 0) {
+      setSelectedType('modify');
+    } else if (stats.delete?.count > 0) {
+      setSelectedType('delete');
     }
   };
 
@@ -513,141 +589,83 @@ export default function RequirementList() {
       <h1 style={{ marginBottom: 24 }}>需求列表</h1>
 
       <Card>
-        {/* 日期导航 */}
-        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flex: 1 }}>
-            <Button
-            icon={<LeftOutlined />}
-            onClick={() => {
-              setWeekOffset(weekOffset - 1);
-              setSelectedDate(''); // 清空选中状态，等待新日期加载
-            }}
-            disabled={weekOffset <= weekBoundaries.minWeekOffset}
-          />
-          {weeklyDates.map(date => {
-            const isCurrentWeek = date.label.includes('本周');
-            return (
-            <div
-              key={date.date}
-              style={{
-                flex: 1,
-                maxWidth: 400,
-                padding: 8,
-                border: selectedDate === date.date
-                  ? '2px solid #69b1ff'
-                  : isCurrentWeek
-                  ? '2px solid #1890ff'
-                  : '1px solid #d9d9d9',
-                borderRadius: 6,
-                backgroundColor: '#fff',
-                cursor: 'pointer'
-              }}
-              onClick={() => {
-                setSelectedDate(date.date);
-                // 如果当前选中的类型在新日期下有数据，保持不变；否则选择第一个有数据的类型
-                const stats = dateStatistics[date.date];
-                if (stats && stats[selectedType]?.count > 0) {
-                  // 保持当前类型
-                } else {
-                  // 选择第一个有数据的类型
-                  if (stats?.import?.count > 0) {
-                    setSelectedType('import');
-                  } else if (stats?.delete?.count > 0) {
-                    setSelectedType('delete');
-                  } else if (stats?.modify?.count > 0) {
-                    setSelectedType('modify');
+        {/* 日期选择和类型统计 */}
+        <div style={{ marginBottom: 24 }}>
+          {/* 日期选择器和类型统计按钮 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {/* 日期选择器 */}
+            <div>
+              <span style={{ marginRight: 8 }}>日期：</span>
+              <DatePicker
+                value={selectedDate ? dayjs(selectedDate) : null}
+                onChange={(date) => {
+                  if (date) {
+                    setSelectedDate(date.format('YYYY-MM-DD'));
                   }
-                }
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
-                {isCurrentWeek ? (
-                  <>
-                    <span>
-                      {date.label.split('（')[0]}（
-                    </span>
-                    <span style={{ color: selectedDate === date.date ? '#1890ff' : '#69b1ff', fontWeight: 'bold' }}>
-                      {date.label.split('（')[1].split('）')[0]}
-                    </span>
-                    <span>
-                      ）
-                    </span>
-                  </>
-                ) : (
-                  date.label
-                )}
-              </div>
+                }}
+                disabledDate={(current) => {
+                  // 禁用不可选日期（非周三、非周六）
+                  if (!availableDates.includes(current.format('YYYY-MM-DD'))) {
+                    return true;
+                  }
+                  return false;
+                }}
+                placeholder="选择日期"
+                format="YYYY年MM月DD日（ddd）"
+                style={{ width: 210 }}
+              />
+            </div>
 
-              {/* 类型统计 */}
-              <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                {(['import', 'delete', 'modify'] as const).map(type => {
-                  const hasData = (dateStatistics[date.date]?.[type]?.count || 0) > 0;
-                  const isSelected = selectedDate === date.date && selectedType === type && hasData;
-                  const styleConfig = hasData
-                    ? (isSelected ? typeButtonStyles[type].selected : typeButtonStyles[type].unselected)
-                    : null;
+            {/* 类型统计按钮 */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {(['import', 'modify', 'delete'] as const).map((type) => {
+                const isSelected = selectedType === type;
+                const count = dateStatistics[type]?.count || 0;
+                const isDisabled = count === 0;
+                const typeConfig = {
+                  import: { bgColor: '#e6f7ff', borderColor: '#1890ff', textColor: '#0050b3' },
+                  modify: { bgColor: '#fff7e6', borderColor: '#fa8c16', textColor: '#d46b08' },
+                  delete: { bgColor: '#fff1f0', borderColor: '#f5222d', textColor: '#cf1322' }
+                };
+                const config = typeConfig[type];
 
-                  return (
+                return (
                   <div
                     key={type}
+                    onClick={() => !isDisabled && setSelectedType(type)}
                     style={{
-                      flex: 1,
-                      padding: '6px 8px',
-                      backgroundColor: hasData ? styleConfig!.backgroundColor : '#f5f5f5',
-                      borderLeft: hasData && isSelected ? `3px solid ${styleConfig!.borderColor}` : 'none',
-                      borderRadius: 4,
-                      textAlign: 'center',
-                      cursor: hasData ? 'pointer' : 'not-allowed',
-                      border: hasData && isSelected
-                        ? `2px solid ${styleConfig!.borderColor}`
-                        : hasData
-                        ? `1px solid ${styleConfig!.borderColor}`
-                        : '1px solid #d9d9d9',
-                      opacity: hasData ? 1 : 0.5,
-                      transition: 'all 0.2s ease'
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (hasData) {
-                        setSelectedDate(date.date);
-                        setSelectedType(type);
-                      }
+                      padding: '4px 8px',
+                      minWidth: '80px',
+                      height: '32px',
+                      backgroundColor: isSelected ? config.bgColor : '#ffffff',
+                      border: isSelected ? `2px solid ${config.borderColor}` : `1px solid ${config.borderColor}`,
+                      borderRadius: '4px',
+                      color: isSelected ? config.textColor : '#666',
+                      fontSize: '12px',
+                      cursor: isDisabled ? 'not-allowed' : 'pointer',
+                      opacity: isDisabled ? 0.5 : 1,
+                      transition: 'all 0.2s ease',
+                      boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      userSelect: 'none'
                     }}
                   >
-                    <div style={{ fontSize: 13, marginBottom: 3, color: hasData ? styleConfig!.textColor : '#999999' }}>
-                      {requirementTypeIcons[type]} {requirementTypeText[type]}
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 'bold', color: hasData ? styleConfig!.textColor : '#999999' }}>
-                      {dateStatistics[date.date]?.[type]?.count || 0}
-                    </div>
+                    <span>{requirementTypeText[type]}：</span>
+                    <span style={{ fontWeight: 'bold' }}>{count}</span>
                   </div>
-                  );
-                })}
-              </div>
+                );
+              })}
             </div>
-            );
-          })}
-          <Button
-            icon={<RightOutlined />}
-            onClick={() => {
-              setWeekOffset(weekOffset + 1);
-              setSelectedDate(''); // 清空选中状态，等待新日期加载
-            }}
-            disabled={weekOffset >= weekBoundaries.maxWeekOffset}
-          />
           </div>
-          <Button
-            icon={<ExportOutlined />}
-            onClick={() => message.info('导出功能待实现')}
-          >
-            导出Excel
-          </Button>
         </div>
 
         {/* 当前选择提示 */}
         {selectedDate && (
           <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
-            当前选中：{weeklyDates.find(d => d.date === selectedDate)?.label} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
+            当前选中：{dayjs(selectedDate).format('YYYY年MM月DD日（ddd）')} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
           </div>
         )}
 
@@ -752,6 +770,13 @@ export default function RequirementList() {
           rowKey="id"
           size="small"
           scroll={{ x: 'max-content', y: 440 }}
+          rowClassName={(record) => {
+            // 如果该记录ID在高亮列表中，返回高亮样式
+            if (highlightIds.includes(record.id)) {
+              return 'highlight-row';
+            }
+            return '';
+          }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,

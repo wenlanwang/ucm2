@@ -1,1 +1,33 @@
 /* App styles */
+
+/* 表格行高亮样式 - 5秒淡出动画 */
+.highlight-row {
+  animation: highlightFadeOut 5s ease-out forwards;
+}
+
+@keyframes highlightFadeOut {
+  0% {
+    background-color: #fff1f0 !important;
+    border-left: 4px solid #ff4d4f !important;
+  }
+  20% {
+    background-color: #fff7e6 !important;
+    border-left: 4px solid #ffa940 !important;
+  }
+  40% {
+    background-color: #fffbe6 !important;
+    border-left: 4px solid #ffd666 !important;
+  }
+  60% {
+    background-color: #f6ffed !important;
+    border-left: 4px solid #b7eb8f !important;
+  }
+  80% {
+    background-color: #f0f5ff !important;
+    border-left: 4px solid #adc6ff !important;
+  }
+  100% {
+    background-color: transparent !important;
+    border-left: none !important;
+  }
+}

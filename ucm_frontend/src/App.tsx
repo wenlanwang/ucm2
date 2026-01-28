@@ -29,7 +29,7 @@ function App() {
           <Route path="/" element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" />}>
             <Route index element={<Dashboard />} />
             <Route path="requirements">
-              <Route path="register" element={<RequirementRegister />} />
+              <Route path="register" element={<RequirementRegister key="requirement-register" />} />
               <Route path="list" element={<RequirementList />} />
             </Route>
             <Route path="admin">

@@ -58,6 +58,7 @@ export default function RequirementRegister() {
   
   // 加载可用UCM日期
   useEffect(() => {
+    console.log('RequirementRegister: Component mounted, loading available dates...');
     loadAvailableDates();
   }, []);
   
@@ -76,42 +77,47 @@ export default function RequirementRegister() {
     setIsAllValid(allValid && tableData.length > 0);
   }, [tableData]);
 
-  // 自动选择最近的可选日期（优先周三和周六）
+  // 自动选择最近的可选日期
   const selectNearestAvailableDate = (dates: string[]): dayjs.Dayjs | null => {
     if (!dates || dates.length === 0) return null;
 
     const today = dayjs();
-    const currentWeekStart = today.startOf('week');
 
-    // 生成本周及未来几周的周三和周六日期列表
-    const priorityOrder: string[] = [];
-    for (let week = 0; week < 8; week++) {
-      const wednesday = currentWeekStart.add(3 + week * 7, 'day').format('YYYY-MM-DD');
-      const saturday = currentWeekStart.add(6 + week * 7, 'day').format('YYYY-MM-DD');
-      priorityOrder.push(wednesday, saturday);
-    }
-
-    // 找到第一个在可选日期中且未过期的日期
-    const selectedDate = priorityOrder.find(date =>
-      dates.includes(date) && dayjs(date).isAfter(today, 'day')
+    // 过滤出今天或之后的日期
+    const futureDates = dates.filter(date =>
+      dayjs(date).isAfter(today, 'day') || dayjs(date).isSame(today, 'day')
     );
 
-    return selectedDate ? dayjs(selectedDate) : null;
+    console.log('selectNearestAvailableDate: futureDates =', futureDates);
+
+    if (futureDates.length === 0) return null;
+
+    // 按日期排序，返回第一个（最近的）
+    futureDates.sort((a, b) => dayjs(a).diff(dayjs(b)));
+
+    console.log('selectNearestAvailableDate: sorted futureDates =', futureDates);
+    console.log('selectNearestAvailableDate: selectedDate =', futureDates[0]);
+
+    return dayjs(futureDates[0]);
   };
 
   const loadAvailableDates = async () => {
     try {
+      console.log('loadAvailableDates: Fetching dates from API...');
       const response = await api.get('/requirements/available_dates/');
       const dates = response.data.dates;
       setAvailableDates(dates);
       setDeadlines(response.data.deadlines);
 
-      // 自动选择最近的可选日期
+      // 总是自动选择最近的可选日期，确保每次加载都有默认值
       const autoSelectedDate = selectNearestAvailableDate(dates);
+      console.log('loadAvailableDates: autoSelectedDate =', autoSelectedDate?.format('YYYY-MM-DD'));
       if (autoSelectedDate) {
         setUcmChangeDate(autoSelectedDate);
+        console.log('loadAvailableDates: ucmChangeDate set to', autoSelectedDate.format('YYYY-MM-DD'));
       }
     } catch (error) {
+      console.error('loadAvailableDates: Error loading dates', error);
       message.error('加载可用日期失败');
     }
   };
@@ -798,16 +804,17 @@ export default function RequirementRegister() {
         title: '登记成功',
         content: `已成功登记 ${response.data.submitted_count} 条需求`,
         onOk: () => {
-          // 跳转到需求列表页面，传递刚登记的需求ID用于高亮显示
-          navigate('/requirements/list', {
-            state: {
-              highlightIds: response.data.submitted_ids || [],
-              filters: {
-                status: 'pending',
-                submitter: user?.username
-              }
-            }
-          });
+          // 跳转到需求列表页面，使用URL参数传递筛选条件
+          const params = new URLSearchParams();
+          params.set('ucm_change_date', ucmChangeDate.format('YYYY-MM-DD'));
+          params.set('requirement_type', activeTab);
+          params.set('submitter', user?.username || '');
+          
+          if (response.data.submitted_ids && response.data.submitted_ids.length > 0) {
+            params.set('highlight_ids', response.data.submitted_ids.join(','));
+          }
+
+          navigate(`/requirements/list?${params.toString()}`);
         }
       });
     } catch (error: any) {
