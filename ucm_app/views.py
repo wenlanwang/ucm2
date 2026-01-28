@@ -966,50 +966,58 @@ class TemplateConfigViewSet(viewsets.ModelViewSet):
     def download_template(self, request):
         """下载模板文件（.xls格式）"""
         template_type = request.query_params.get('template_type')
-        
+
         if not template_type:
-            return Response({'error': '请指定模板类型'}, 
+            return Response({'error': '请指定模板类型'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 获取模板配置
         try:
             template = TemplateConfig.objects.get(template_type=template_type)
             columns = template.get_column_definitions()
         except TemplateConfig.DoesNotExist:
-            return Response({'error': '模板配置不存在'}, 
+            return Response({'error': '模板配置不存在'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 使用xlwt创建.xls文件
         import xlwt
-        
+
         # 创建工作簿
         workbook = xlwt.Workbook(encoding='utf-8')
         sheet = workbook.add_sheet('模板')
-        
+
         # 定义样式
         header_style = xlwt.XFStyle()
         header_font = xlwt.Font()
         header_font.bold = True
         header_font.height = 280  # 14pt
         header_style.font = header_font
-        
+
+        # 根据模板类型设置不同的表头颜色
+        color_map = {
+            'import': 'light_blue',    # 浅蓝色
+            'modify': 'light_orange',  # 浅橙色
+            'delete': 'light_red'      # 浅红色
+        }
+        header_color = color_map.get(template_type, 'light_blue')
+
         header_pattern = xlwt.Pattern()
         header_pattern.pattern = xlwt.Pattern.SOLID_PATTERN
-        header_pattern.pattern_fore_colour = xlwt.Style.colour_map['light_blue']
+        header_pattern.pattern_fore_colour = xlwt.Style.colour_map[header_color]
         header_style.pattern = header_pattern
-        
+
         header_alignment = xlwt.Alignment()
         header_alignment.horz = xlwt.Alignment.HORZ_CENTER
         header_alignment.vert = xlwt.Alignment.VERT_CENTER
         header_style.alignment = header_alignment
-        
+
         header_borders = xlwt.Borders()
         header_borders.left = xlwt.Borders.THIN
         header_borders.right = xlwt.Borders.THIN
         header_borders.top = xlwt.Borders.THIN
         header_borders.bottom = xlwt.Borders.THIN
         header_style.borders = header_borders
-        
+
         data_style = xlwt.XFStyle()
         data_borders = xlwt.Borders()
         data_borders.left = xlwt.Borders.THIN
@@ -1017,22 +1025,22 @@ class TemplateConfigViewSet(viewsets.ModelViewSet):
         data_borders.top = xlwt.Borders.THIN
         data_borders.bottom = xlwt.Borders.THIN
         data_style.borders = data_borders
-        
+
         # 写入表头
         for col_idx, col_def in enumerate(columns):
             header = col_def['name']
             sheet.write(0, col_idx, header, header_style)
             # 设置列宽
             sheet.col(col_idx).width = 4000  # 约20个字符
-        
+
         # 写入样例数据
         for col_idx, col_def in enumerate(columns):
             if col_def['example']:
                 sheet.write(1, col_idx, col_def['example'], data_style)
-        
+
         # 创建HTTP响应
         response = HttpResponse(content_type='application/vnd.ms-excel')
-        
+
         # 设置文件名
         type_map = {
             'import': '导入',
@@ -1042,10 +1050,10 @@ class TemplateConfigViewSet(viewsets.ModelViewSet):
         type_name = type_map.get(template_type, template_type)
         filename = f'{type_name}_模板.xls'
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        
+
         # 保存工作簿到响应
         workbook.save(response)
-        
+
         return response
 
 

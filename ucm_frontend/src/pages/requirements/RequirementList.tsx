@@ -245,6 +245,12 @@ export default function RequirementList() {
         }
       });
 
+      // 'delete'类型使用'import'的列配置
+      if (columnsMap['import'] && columnsMap['import'].length > 0) {
+        columnsMap['delete'] = columnsMap['import'];
+        console.log('删除类型使用导入模板的列配置');
+      }
+
       console.log('所有模板列配置:', columnsMap);
       setTemplateColumnsByType(columnsMap as { import: any[]; modify: any[]; delete: any[] });
     } catch (error) {
@@ -366,25 +372,29 @@ export default function RequirementList() {
       render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
     },
     // 动态列（根据选中的类型对应的模板配置）
-    ...(templateColumnsByType[selectedType] || []).map((col: any) => ({
-      title: (
-        <div style={{
-          backgroundColor: typeColumnStyles[selectedType].backgroundColor,
-          borderLeft: `3px solid ${typeColumnStyles[selectedType].borderColor}`,
-          padding: '4px 8px',
-          color: typeColumnStyles[selectedType].textColor,
-          fontWeight: 'bold',
-          lineHeight: '1.2',
-          fontSize: '13px'
-        }}>
-          {col.name}
-        </div>
-      ),
-      dataIndex: ['requirement_data_dict', col.name],
-      width: 120,
-      ellipsis: true,
-      render: (value: any) => value || '-'
-    })),
+    ...(templateColumnsByType[selectedType] || []).map((col: any) => {
+      // 当selectedType为'delete'时，使用'import'的列配置，但表头色调保持红色
+      const displayType = selectedType === 'delete' ? 'delete' : selectedType;
+      return {
+        title: (
+          <div style={{
+            backgroundColor: typeColumnStyles[displayType].backgroundColor,
+            borderLeft: `3px solid ${typeColumnStyles[displayType].borderColor}`,
+            padding: '4px 8px',
+            color: typeColumnStyles[displayType].textColor,
+            fontWeight: 'bold',
+            lineHeight: '1.2',
+            fontSize: '13px'
+          }}>
+            {col.name}
+          </div>
+        ),
+        dataIndex: ['requirement_data_dict', col.name],
+        width: 120,
+        ellipsis: true,
+        render: (value: any) => value || '-'
+      };
+    }),
   ];
 
   // 构建右侧固定列

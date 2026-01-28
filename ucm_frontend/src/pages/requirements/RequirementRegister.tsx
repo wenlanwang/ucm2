@@ -124,8 +124,10 @@ export default function RequirementRegister() {
       const templates = response.data.results || response.data;
       console.log('Templates array:', templates);
       
-      const template = templates.find((t: any) => t.template_type === activeTab);
-      console.log('Found template for type', activeTab, ':', template);
+      // 当activeTab为'delete'时，使用'import'类型的模板配置
+      const templateType = activeTab === 'delete' ? 'import' : activeTab;
+      const template = templates.find((t: any) => t.template_type === templateType);
+      console.log('Found template for type', templateType, ':', template);
       
       if (template) {
         // 使用后端提供的get_column_definitions方法
@@ -151,8 +153,8 @@ export default function RequirementRegister() {
         console.log('Setting template columns:', columns);
         setTemplateColumns(columns);
       } else {
-        console.error('Template not found for type:', activeTab);
-        message.error(`未找到${activeTab}类型的模板配置`);
+        console.error('Template not found for type:', templateType);
+        message.error(`未找到${templateType}类型的模板配置`);
       }
     } catch (error: any) {
       console.error('加载模板配置失败:', error);
@@ -431,11 +433,13 @@ export default function RequirementRegister() {
   const handleValidateAll = async () => {
     setLoading(true);
     try {
+      // 当activeTab为'delete'时，使用'import'类型的校验规则
+      const requirementType = activeTab === 'delete' ? 'import' : activeTab;
       const response = await api.post('/requirements/validate_data/', {
-        requirement_type: activeTab,
+        requirement_type: requirementType,
         excel_data: tableData.map(row => row.data)
       });
-      
+
       const validationResults = response.data.validation_results;
       const newData = tableData.map((row, index) => ({
         ...row,
@@ -445,9 +449,9 @@ export default function RequirementRegister() {
           warnings: validationResults[index]?.warnings || {}
         }
       }));
-      
+
       setTableData(newData);
-      
+
       const hasErrors = newData.some(row => !row.validation.isValid);
       if (hasErrors) {
         message.warning('校验完成，存在错误数据');
@@ -459,7 +463,7 @@ export default function RequirementRegister() {
       if (error.response?.data?.error_type === 'column_mismatch') {
         const missingColumns = error.response.data.missing_columns || [];
         const extraColumns = error.response.data.extra_columns || [];
-        
+
         // 为缺少的列添加错误提示
         if (missingColumns.length > 0) {
           const newData = tableData.map(row => {
@@ -478,7 +482,7 @@ export default function RequirementRegister() {
           });
           setTableData(newData);
         }
-        
+
         Modal.error({
           title: '数据格式不匹配',
           content: (
@@ -510,7 +514,9 @@ export default function RequirementRegister() {
   
   const handleDownloadTemplate = async () => {
     try {
-      const response = await api.get(`/templates/download_template/?template_type=${activeTab}`, {
+      // 当activeTab为'delete'时，下载'import'类型的模板文件
+      const templateType = activeTab === 'delete' ? 'import' : activeTab;
+      const response = await api.get(`/templates/download_template/?template_type=${templateType}`, {
         responseType: 'blob'
       });
       
@@ -523,6 +529,7 @@ export default function RequirementRegister() {
         modify: '修改',
         delete: '删除'
       };
+      // 文件名始终使用activeTab对应的类型名称
       link.setAttribute('download', `${typeMap[activeTab]}_模板.xls`);
       document.body.appendChild(link);
       link.click();
@@ -780,12 +787,13 @@ export default function RequirementRegister() {
   
   const submitRequirements = async () => {
     try {
+      // 当activeTab为'delete'时，requirement_type传递'delete'，但数据结构是"导入模板"格式
       const response = await api.post('/requirements/batch_submit/', {
         requirement_type: activeTab,
         ucm_change_date: ucmChangeDate.format('YYYY-MM-DD'),
         requirements: tableData.map(row => row.data)
       });
-      
+
       Modal.success({
         title: '登记成功',
         content: `已成功登记 ${response.data.submitted_count} 条需求`,
