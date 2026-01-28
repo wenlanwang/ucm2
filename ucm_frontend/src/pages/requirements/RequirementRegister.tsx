@@ -879,6 +879,20 @@ export default function RequirementRegister() {
           </Space>
         ),
       },
+      {
+        title: '类型',
+        width: 80,
+        fixed: 'left' as const,
+        render: () => {
+          const typeMap = {
+            import: { text: '导入', color: 'blue' },
+            delete: { text: '删除', color: 'red' },
+            modify: { text: '修改', color: 'orange' }
+          };
+          const typeConfig = typeMap[activeTab];
+          return <Tag color={typeConfig.color}>{typeConfig.text}</Tag>;
+        },
+      },
     ];
     
     // 添加模板列
