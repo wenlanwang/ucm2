@@ -245,49 +245,47 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         """获取可用的UCM变更日期"""
         try:
             from datetime import timedelta
-            
+
             config = UCMDateConfig.objects.first()
             if not config:
                 config = UCMDateConfig.objects.create(
                     wednesday_deadline_hours=7,
                     saturday_deadline_hours=31
                 )
-            
+
             now = timezone.now()
             available_dates = []
             deadlines = {}
-            
-            # 计算本周三
+
+            # 计算本周三（截止时间为周三 23:59:59）
             this_wednesday = now + timedelta(days=(2 - now.weekday()) % 7)
             this_wednesday = this_wednesday.replace(hour=0, minute=0, second=0, microsecond=0)
-            
-            # 计算本周六
+            wednesday_deadline = this_wednesday.replace(hour=23, minute=59, second=59)
+
+            # 计算本周六（截止时间为周六 23:59:59）
             this_saturday = now + timedelta(days=(5 - now.weekday()) % 7)
             this_saturday = this_saturday.replace(hour=0, minute=0, second=0, microsecond=0)
-            
+            saturday_deadline = this_saturday.replace(hour=23, minute=59, second=59)
+
             # 计算下周三
             next_wednesday = this_wednesday + timedelta(days=7)
-            
+
             # 计算下周六
             next_saturday = this_saturday + timedelta(days=7)
-            
-            # 检查是否可选（周三提前7小时，周六提前31小时）
-            wednesday_deadline = this_wednesday - timedelta(hours=config.wednesday_deadline_hours)
-            saturday_deadline = this_saturday - timedelta(hours=config.saturday_deadline_hours)
-            
+
             candidates = [
                 (this_wednesday, wednesday_deadline, '周三'),
                 (this_saturday, saturday_deadline, '周六'),
-                (next_wednesday, wednesday_deadline + timedelta(days=7), '周三'),
-                (next_saturday, saturday_deadline + timedelta(days=7), '周六')
+                (next_wednesday, wednesday_deadline + timedelta(days=7), '下周三'),
+                (next_saturday, saturday_deadline + timedelta(days=7), '下周六')
             ]
-            
+
             for date, deadline, day_type in candidates:
-                if now < deadline:
+                if now <= deadline:
                     date_str = date.strftime('%Y-%m-%d')
                     available_dates.append(date_str)
-                    deadlines[date_str] = f"{day_type}UCM变更，最晚登记时间在{deadline.strftime('%Y-%m-%d %H:%M')}前"
-            
+                    deadlines[date_str] = f"{day_type}UCM变更，最晚登记时间在{deadline.strftime('%Y-%m-%d %H:%M:%S')}前"
+
             return Response({
                 'dates': available_dates,
                 'deadlines': deadlines

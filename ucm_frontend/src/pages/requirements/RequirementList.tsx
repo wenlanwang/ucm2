@@ -144,11 +144,17 @@ export default function RequirementList() {
 
   // 处理URL参数
   useEffect(() => {
-    // 优先从 URL 参数读取
+    // 检查是否有高亮ID参数，只有当有高亮ID时，说明是从需求登记页跳转过来的
+    const highlightIdsParam = searchParams.get('highlight_ids');
+
+    if (!highlightIdsParam) {
+      // 如果没有高亮ID，说明是刷新页面或直接访问，不处理URL参数
+      return;
+    }
+
     const dateParam = searchParams.get('ucm_change_date');
     const typeParam = searchParams.get('requirement_type');
     const submitterParam = searchParams.get('submitter');
-    const highlightIdsParam = searchParams.get('highlight_ids');
 
     // 设置高亮ID
     if (highlightIdsParam) {
@@ -159,11 +165,6 @@ export default function RequirementList() {
           setHighlightIds([]);
         }, 5000);
       }
-    }
-
-    // 如果有日期参数，直接设置日期
-    if (dateParam) {
-      setSelectedDate(dateParam);
     }
 
     // 设置登记类型
@@ -208,34 +209,59 @@ export default function RequirementList() {
     loadTemplateColumns();
   }, []);
 
-// 自动选择最近的周三或周六
-  const selectNearestAvailableDate = (dates: string[]): dayjs.Dayjs | null => {
+// 根据时间规则选择默认日期
+  const selectDefaultDateByRule = (dates: string[]): dayjs.Dayjs | null => {
     if (!dates || dates.length === 0) return null;
 
-    const today = dayjs();
+    const now = dayjs();
+    console.log('selectDefaultDateByRule - now:', now.format('YYYY-MM-DD HH:mm:ss'));
+    console.log('selectDefaultDateByRule - now.day():', now.day()); // 0=周日, 1=周一, ..., 6=周六
 
-    // 生成本周及未来几周的周三和周六日期列表
-    const priorityDates: dayjs.Dayjs[] = [];
-    for (let week = 0; week < 8; week++) {
-      const weekStart = today.startOf('week').add(week, 'week');
-      const wednesday = weekStart.add(3, 'day');
-      const saturday = weekStart.add(6, 'day');
+    // 计算本周三和本周六
+    const currentDay = now.day(); // 0=周日, 1=周一, ..., 6=周六
+    const wednesdayOffset = (3 - currentDay + 7) % 7; // 到周三的天数
+    const saturdayOffset = (6 - currentDay + 7) % 7; // 到周六的天数
 
-      if (wednesday.isAfter(today, 'day') || wednesday.isSame(today, 'day')) {
-        priorityDates.push(wednesday);
-      }
-      if (saturday.isAfter(today, 'day') || saturday.isSame(today, 'day')) {
-        priorityDates.push(saturday);
-      }
+    const wednesday = now.add(wednesdayOffset, 'day');
+    const saturday = now.add(saturdayOffset, 'day');
+    const nextWednesday = wednesday.add(7, 'day');
+
+    console.log('selectDefaultDateByRule - wednesdayOffset:', wednesdayOffset);
+    console.log('selectDefaultDateByRule - saturdayOffset:', saturdayOffset);
+    console.log('selectDefaultDateByRule - wednesday:', wednesday.format('YYYY-MM-DD'));
+    console.log('selectDefaultDateByRule - saturday:', saturday.format('YYYY-MM-DD'));
+    console.log('selectDefaultDateByRule - nextWednesday:', nextWednesday.format('YYYY-MM-DD'));
+    console.log('selectDefaultDateByRule - available dates:', dates);
+
+    let targetDate: dayjs.Dayjs;
+
+    // 判断当前时间区间
+    // 周三 24:00 前（即周三 23:59:59 之前）
+    if (now.isBefore(wednesday.endOf('day'))) {
+      // 当前时间 < 周三 23:59，默认本周三
+      targetDate = wednesday;
+      console.log('selectDefaultDateByRule - 选择本周三:', targetDate.format('YYYY-MM-DD'));
+    } else if (now.isBefore(saturday.endOf('day'))) {
+      // 周三 23:59 <= 当前时间 < 周六 23:59，默认本周六
+      targetDate = saturday;
+      console.log('selectDefaultDateByRule - 选择本周六:', targetDate.format('YYYY-MM-DD'));
+    } else {
+      // 当前时间 >= 周六 23:59，默认下周三
+      targetDate = nextWednesday;
+      console.log('selectDefaultDateByRule - 选择下周三:', targetDate.format('YYYY-MM-DD'));
     }
 
-    // 找到第一个在可选日期中的日期
-    for (const date of priorityDates) {
-      if (dates.includes(date.format('YYYY-MM-DD'))) {
-        return date;
-      }
+    const targetDateStr = targetDate.format('YYYY-MM-DD');
+    console.log('selectDefaultDateByRule - targetDateStr:', targetDateStr);
+
+    // 检查目标日期是否在可用日期中
+    if (dates.includes(targetDateStr)) {
+      console.log('selectDefaultDateByRule - 找到匹配日期');
+      return targetDate;
     }
 
+    console.log('selectDefaultDateByRule - 未找到匹配日期');
+    // 如果目标日期不在可用日期中，返回 null
     return null;
   };
 
@@ -246,14 +272,27 @@ export default function RequirementList() {
       const dates = response.data.dates || [];
       setAvailableDates(dates);
 
-      // 检查是否有 URL 参数中的日期
-      const dateParam = searchParams.get('ucm_change_date');
+      console.log('loadAvailableDates - available dates:', dates);
 
-      // 如果没有 URL 参数且还没有选中日期，自动选择最近的周三或周六
-      if (!dateParam && !selectedDate) {
-        const autoSelectedDate = selectNearestAvailableDate(dates);
-        if (autoSelectedDate) {
-          setSelectedDate(autoSelectedDate.format('YYYY-MM-DD'));
+      // 检查是否有 URL 参数中的日期（用于从需求登记页跳转）
+      const dateParam = searchParams.get('ucm_change_date');
+      const highlightIdsParam = searchParams.get('highlight_ids');
+
+      console.log('loadAvailableDates - dateParam:', dateParam);
+      console.log('loadAvailableDates - highlightIdsParam:', highlightIdsParam);
+
+      // 如果有高亮ID参数，说明是从需求登记页跳转过来的，使用参数日期
+      if (dateParam && highlightIdsParam) {
+        setSelectedDate(dateParam);
+        console.log('loadAvailableDates - 使用参数日期:', dateParam);
+      } else {
+        // 否则按规则选择默认日期（刷新页面或直接访问时）
+        const defaultDate = selectDefaultDateByRule(dates);
+        if (defaultDate) {
+          setSelectedDate(defaultDate.format('YYYY-MM-DD'));
+          console.log('loadAvailableDates - 使用规则日期:', defaultDate.format('YYYY-MM-DD'));
+        } else {
+          console.log('loadAvailableDates - 未找到合适的默认日期');
         }
       }
     } catch (error) {
