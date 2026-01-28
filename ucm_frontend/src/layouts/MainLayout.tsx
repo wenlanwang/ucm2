@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Avatar, Button, message } from 'antd';
-import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, TableOutlined, SettingOutlined, DatabaseOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, TableOutlined, SettingOutlined, DatabaseOutlined, FileExcelOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/useAuthStore';
 
 const { Header, Sider, Content } = Layout;
@@ -77,6 +77,11 @@ export default function MainLayout() {
           key: '/admin/templates',
           label: '模板配置管理',
         },
+        {
+          key: '/admin/deadline-settings',
+          label: '登记截止设置',
+          icon: <ClockCircleOutlined />,
+        },
       ],
     },
   ];
@@ -90,6 +95,7 @@ export default function MainLayout() {
     if (path.startsWith('/admin/column-options')) return ['/admin/column-options'];
     if (path.startsWith('/admin/inventory')) return ['/admin/inventory'];
     if (path.startsWith('/admin/templates')) return ['/admin/templates'];
+    if (path.startsWith('/admin/deadline-settings')) return ['/admin/deadline-settings'];
     return [];
   };
 

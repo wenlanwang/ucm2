@@ -12,6 +12,7 @@ import ManufacturerManage from './pages/admin/ManufacturerManage';
 import ColumnOptionsManage from './pages/admin/ColumnOptionsManage';
 import InventoryManage from './pages/admin/InventoryManage';
 import TemplateManage from './pages/admin/TemplateManage';
+import DeadlineSettings from './pages/admin/DeadlineSettings';
 import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
               <Route path="column-options" element={<ErrorBoundary><ColumnOptionsManage /></ErrorBoundary>} />
               <Route path="inventory" element={<ErrorBoundary><InventoryManage /></ErrorBoundary>} />
               <Route path="templates" element={<ErrorBoundary><TemplateManage /></ErrorBoundary>} />
+              <Route path="deadline-settings" element={<ErrorBoundary><DeadlineSettings /></ErrorBoundary>} />
             </Route>
           </Route>
         </Routes>

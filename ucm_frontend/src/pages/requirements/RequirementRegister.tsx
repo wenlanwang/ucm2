@@ -76,6 +76,25 @@ export default function RequirementRegister() {
     setIsAllValid(allValid && tableData.length > 0);
   }, [tableData]);
 
+  // 列名样式配置
+  const typeColumnStyles = {
+    import: {
+      backgroundColor: '#e6f7ff',
+      borderColor: '#1890ff',
+      textColor: '#0050b3'
+    },
+    modify: {
+      backgroundColor: '#fff7e6',
+      borderColor: '#fa8c16',
+      textColor: '#d46b08'
+    },
+    delete: {
+      backgroundColor: '#fff1f0',
+      borderColor: '#f5222d',
+      textColor: '#cf1322'
+    }
+  };
+
   // 自动选择最近的可选日期
   const selectNearestAvailableDate = (dates: string[]): dayjs.Dayjs | null => {
     if (!dates || dates.length === 0) return null;
@@ -906,10 +925,18 @@ export default function RequirementRegister() {
     templateCols.forEach(col => {
       const columnConfig: any = {
         title: (
-          <span>
+          <div style={{
+            backgroundColor: typeColumnStyles[activeTab].backgroundColor,
+            borderLeft: `3px solid ${typeColumnStyles[activeTab].borderColor}`,
+            padding: '4px 8px',
+            color: typeColumnStyles[activeTab].textColor,
+            fontWeight: 'bold',
+            lineHeight: '1.2',
+            fontSize: '13px'
+          }}>
             {col.name}
             {col.required && <span style={{ color: '#ff4d4f', marginLeft: '4px' }}>*</span>}
-          </span>
+          </div>
         ),
         dataIndex: col.name,
         width: 150,
@@ -969,7 +996,7 @@ export default function RequirementRegister() {
             icon={<UploadOutlined />}
             onClick={() => setUploadModalVisible(true)}
           >
-            导入需求
+            批量上传
           </Button>
           <Button
             icon={<PlusOutlined />}
@@ -1062,7 +1089,7 @@ export default function RequirementRegister() {
       
       {/* 导入Excel弹框 */}
       <Modal
-        title="导入需求"
+        title="批量上传"
         open={uploadModalVisible}
         onOk={handleImportExcel}
         onCancel={() => {

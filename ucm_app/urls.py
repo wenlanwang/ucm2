@@ -15,4 +15,5 @@ urlpatterns = [
     path('auth/logout/', views.user_logout, name='user_logout'),
     path('auth/current-user/', views.get_current_user, name='get_current_user'),
     path('ucm-date-config/', views.get_ucm_date_config, name='get_ucm_date_config'),
+    path('deadline_config/', views.deadline_config, name='deadline_config'),
 ]

@@ -1184,3 +1184,58 @@ def get_ucm_date_config(request):
         })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def deadline_config(request):
+    """获取或更新登记截止配置"""
+    try:
+        config = UCMDateConfig.objects.first()
+        if not config:
+            config = UCMDateConfig.objects.create(
+                wednesday_deadline_hours=7,
+                saturday_deadline_hours=31
+            )
+        
+        if request.method == 'GET':
+            return Response({
+                'wednesday_deadline_hours': config.wednesday_deadline_hours,
+                'saturday_deadline_hours': config.saturday_deadline_hours
+            })
+        elif request.method == 'PUT':
+            wednesday_hours = request.data.get('wednesday_deadline_hours')
+            saturday_hours = request.data.get('saturday_deadline_hours')
+            
+            # 验证输入
+            if wednesday_hours is not None:
+                try:
+                    wednesday_hours = int(wednesday_hours)
+                    if not (-168 <= wednesday_hours <= 168):
+                        return Response({'error': '周三截止小时数必须在-168到168之间'}, status=status.HTTP_400_BAD_REQUEST)
+                except (ValueError, TypeError):
+                    return Response({'error': '周三截止小时数格式错误'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if saturday_hours is not None:
+                try:
+                    saturday_hours = int(saturday_hours)
+                    if not (-168 <= saturday_hours <= 168):
+                        return Response({'error': '周六截止小时数必须在-168到168之间'}, status=status.HTTP_400_BAD_REQUEST)
+                except (ValueError, TypeError):
+                    return Response({'error': '周六截止小时数格式错误'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 更新配置
+            if wednesday_hours is not None:
+                config.wednesday_deadline_hours = wednesday_hours
+            if saturday_hours is not None:
+                config.saturday_deadline_hours = saturday_hours
+            
+            config.save()
+            
+            return Response({
+                'wednesday_deadline_hours': config.wednesday_deadline_hours,
+                'saturday_deadline_hours': config.saturday_deadline_hours,
+                'message': '配置更新成功'
+            })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
