@@ -547,9 +547,72 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 skipped_records = []
                 submitted_ids = []
                 
+                # 获取所有有效的可选值
+                valid_device_types = ManufacturerVersionInfo.objects.values_list(
+                    'device_type', flat=True
+                ).distinct()
+
+                valid_manufacturers = ManufacturerVersionInfo.objects.values_list(
+                    'manufacturer', flat=True
+                ).distinct()
+
+                valid_versions = ManufacturerVersionInfo.objects.values_list(
+                    'version', flat=True
+                ).distinct()
+
                 for req_data in requirements:
                     name = req_data.get('名称', '')
                     ip = req_data.get('IP', '')
+                    device_type = req_data.get('设备类型', '')
+                    manufacturer = req_data.get('品牌(厂商)', '')
+                    version = req_data.get('版本', '')
+
+                    # 独立校验设备类型
+                    if device_type and device_type not in valid_device_types:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': f'设备类型 "{device_type}" 不在可选范围内'
+                        })
+                        continue
+
+                    # 独立校验品牌(厂商)
+                    if manufacturer and manufacturer not in valid_manufacturers:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': f'品牌(厂商) "{manufacturer}" 不在可选范围内'
+                        })
+                        continue
+
+                    # 独立校验版本
+                    if version and version not in valid_versions:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': f'版本 "{version}" 不在可选范围内'
+                        })
+                        continue
+
+                    # 级联关系校验
+                    if device_type and manufacturer and version:
+                        is_valid_combination = ManufacturerVersionInfo.objects.filter(
+                            device_type=device_type,
+                            manufacturer=manufacturer,
+                            version=version
+                        ).exists()
+
+                        if not is_valid_combination:
+                            skipped_count += 1
+                            skipped_records.append({
+                                'name': name,
+                                'ip': ip,
+                                'reason': f'设备类型、品牌(厂商)、版本组合不匹配'
+                            })
+                            continue
 
                     # 检查重复（名称+UCM变更日期 或 IP+UCM变更日期）
                     # 仅当字段不为空时才进行重复检查
@@ -564,7 +627,7 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                         existing = None
                     else:
                         existing = UCMRequirement.objects.filter(query).first()
-                    
+
                     if existing:
                         skipped_count += 1
                         skipped_records.append({
@@ -573,7 +636,7 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                             'reason': '重复记录'
                         })
                         continue
-                    
+
                     # 创建需求记录
                     requirement = UCMRequirement(
                         requirement_type=requirement_type,

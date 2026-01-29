@@ -282,17 +282,37 @@ export default function RequirementRegister() {
 
     console.log('  - 级联校验:', { deviceType, manufacturer, version });
 
-    // 规则：如果选择了设备类型，必须选择品牌(厂商)
+    // 1. 获取有效的可选值
+    const validDeviceTypes = [...new Set(vendorVersionData.map(item => item.device_type))];
+    const validManufacturers = [...new Set(vendorVersionData.map(item => item.manufacturer))];
+    const validVersions = [...new Set(vendorVersionData.map(item => item.version))];
+
+    // 2. 独立校验设备类型
+    if (deviceType && !validDeviceTypes.includes(deviceType)) {
+      errors['设备类型'] = '设备类型不在可选范围内';
+    }
+
+    // 3. 独立校验品牌(厂商)
+    if (manufacturer && !validManufacturers.includes(manufacturer)) {
+      errors['品牌(厂商)'] = '品牌(厂商)不在可选范围内';
+    }
+
+    // 4. 独立校验版本
+    if (version && !validVersions.includes(version)) {
+      errors['版本'] = '版本不在可选范围内';
+    }
+
+    // 5. 规则：如果选择了设备类型，必须选择品牌(厂商)
     if (deviceType && !manufacturer) {
       errors['品牌(厂商)'] = '请选择品牌(厂商)';
     }
 
-    // 规则：如果选择了品牌(厂商)，必须选择版本
+    // 6. 规则：如果选择了品牌(厂商)，必须选择版本
     if (manufacturer && !version) {
       errors['版本'] = '请选择版本';
     }
 
-    // 规则：如果三者都填了，检查组合是否有效
+    // 7. 规则：如果三者都填了，检查组合是否有效
     if (deviceType && manufacturer && version) {
       const isValidCombination = vendorVersionData.some(
         item => item.device_type === deviceType &&
