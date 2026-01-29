@@ -180,15 +180,15 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # 获取筛选参数
-        status_filter = self.request.query_params.get('status', 'pending')
+        status_filter = self.request.query_params.get('status')
         ucm_change_date = self.request.query_params.get('ucm_change_date')
         requirement_type = self.request.query_params.get('requirement_type')
         search = self.request.query_params.get('search')
         submitter = self.request.query_params.get('submitter')
-        
+
         # 构建查询条件
         queryset = UCMRequirement.objects.all()
-        
+
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         if ucm_change_date:
