@@ -9,6 +9,8 @@ from django.utils import timezone
 from django.http import HttpResponse
 import json
 import xlrd
+import zipfile
+import io
 from datetime import datetime, time
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -954,20 +956,401 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             response = HttpResponse(
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            
+
             # 设置文件名
             status_text = '待处理' if status_filter == 'pending' else '已处理'
             filename = f'UCM需求列表_{status_text}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            
+
             # 保存工作簿到响应
             wb.save(response)
-            
+
             return response
-            
+
         except Exception as e:
-            return Response({'error': f'导出失败: {str(e)}'}, 
+            return Response({'error': f'导出失败: {str(e)}'},
                           status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def export_change_plan(self, request):
+        """导出变更方案"""
+        import traceback
+        ucm_change_date = request.data.get('ucm_change_date')
+
+        if not ucm_change_date:
+            return Response({'error': '请提供UCM变更日期'},
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # 查询选中日期的所有需求数据
+            requirements = UCMRequirement.objects.filter(
+                ucm_change_date=ucm_change_date
+            )
+
+            print(f"查询到 {requirements.count()} 条需求数据")
+
+            # 按类型和地点分组
+            grouped_data = self._group_by_type_and_location(requirements)
+
+            print(f"分组数据: {grouped_data}")
+
+            # 生成所有文件
+            files = []
+
+            # 生成变更方案
+            change_files = self._generate_change_plans(grouped_data, ucm_change_date)
+            files.extend(change_files)
+            print(f"生成了 {len(change_files)} 个变更方案文件")
+
+            # 生成回退方案
+            rollback_files = self._generate_rollback_plans(grouped_data, ucm_change_date)
+            files.extend(rollback_files)
+            print(f"生成了 {len(rollback_files)} 个回退方案文件")
+
+            # 如果没有文件，返回提示
+            if not files:
+                return Response({'error': '该日期没有需求数据'},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+            # 创建压缩包
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for file_info in files:
+                    zip_file.writestr(file_info['filename'], file_info['data'])
+
+            zip_buffer.seek(0)
+
+            # 返回压缩包
+            response = HttpResponse(zip_buffer.getvalue(), content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="UCM变更方案_{ucm_change_date}.zip"'
+
+            return response
+
+        except Exception as e:
+            error_msg = f'导出失败: {str(e)}\n{traceback.format_exc()}'
+            print(error_msg)
+            return Response({'error': error_msg},
+                          status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _group_by_type_and_location(self, requirements):
+        """按类型和地点分组"""
+        grouped = {
+            'import': {'外高桥': [], '嘉定': [], '境外机构': [], '分行': []},
+            'modify': {'外高桥': [], '嘉定': [], '境外机构': [], '分行': []},
+            'delete': {'外高桥': [], '嘉定': [], '境外机构': [], '分行': []},
+        }
+
+        for req in requirements:
+            req_type = req.requirement_type
+            req_data = json.loads(req.requirement_data) if req.requirement_data else {}
+
+            # 获取地点
+            location = self._get_location(req_data, req_type)
+
+            # 添加到对应分组
+            if location in grouped[req_type]:
+                grouped[req_type][location].append(req_data)
+
+        return grouped
+
+    def _get_location(self, row, requirement_type):
+        """根据IP和名称识别地点"""
+        ip_column = 'IP' if requirement_type in ['import', 'delete'] else '设备ip'
+        name_column = '名称' if requirement_type in ['import', 'delete'] else '老指标'
+
+        ip = row.get(ip_column, '')
+        name = row.get(name_column, '')
+
+        # 优先根据IP前缀判断
+        if ip.startswith('76.'):
+            return '嘉定'
+        elif ip.startswith('84.'):
+            return '外高桥'
+        elif ip.startswith('123.'):
+            return '境外机构'
+
+        # 根据名称前2位判断
+        if name:
+            prefix = name[:2].upper()
+            if prefix == 'NF':
+                return '外高桥'
+            elif prefix == 'JD':
+                return '嘉定'
+            elif prefix.isalpha():
+                return '分行'
+
+        # 默认返回分行
+        return '分行'
+
+    def _generate_change_plans(self, grouped_data, ucm_change_date):
+        """生成变更方案文件"""
+        files = []
+
+        for req_type in ['import', 'modify', 'delete']:
+            for location in ['外高桥', '嘉定', '境外机构', '分行']:
+                data = grouped_data.get(req_type, {}).get(location, [])
+
+                if not data:
+                    continue
+
+                # 根据类型生成文件
+                if req_type == 'delete':
+                    file_data = self._generate_delete_change_plan(data)
+                    template_type = 'delete'
+                elif req_type == 'modify':
+                    file_data = self._generate_modify_change_plan(data)
+                    template_type = 'modify'
+                else:  # import
+                    file_data = self._generate_import_change_plan(data)
+                    template_type = 'import'
+
+                type_name = {'import': '导入', 'modify': '修改', 'delete': '删除'}[req_type]
+                filename = f'UCM_{type_name}_{location}.xls'
+
+                files.append({'filename': filename, 'data': file_data})
+
+        return files
+
+    def _generate_rollback_plans(self, grouped_data, ucm_change_date):
+        """生成回退方案文件"""
+        files = []
+
+        for req_type in ['import', 'modify', 'delete']:
+            for location in ['外高桥', '嘉定', '境外机构', '分行']:
+                data = grouped_data.get(req_type, {}).get(location, [])
+
+                if not data:
+                    continue
+
+                # 根据类型生成文件
+                if req_type == 'delete':
+                    # 删除类型的回退方案：使用导入模板的列结构，数据按导入规则映射
+                    file_data = self._generate_import_change_plan(data, is_rollback=True)
+                    template_type = 'import'
+                elif req_type == 'modify':
+                    file_data = self._generate_modify_rollback_plan(data)
+                    template_type = 'modify'
+                else:  # import
+                    file_data = self._generate_import_change_plan(data, is_rollback=True)
+                    template_type = 'import'
+
+                type_name = {'import': '导入', 'modify': '修改', 'delete': '删除'}[req_type]
+                filename = f'UCM_{type_name}_{location}_回退.xls'
+
+                files.append({'filename': filename, 'data': file_data})
+
+        return files
+
+    def _generate_delete_change_plan(self, data):
+        """生成删除类型的变更方案"""
+        try:
+            # 获取删除模板
+            template = TemplateConfig.objects.get(template_type='delete')
+            columns = template.get_column_definitions()
+        except TemplateConfig.DoesNotExist:
+            columns = []
+
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "变更方案"
+
+        # 删除模板的列名映射
+        column_mapping = {
+            '设备IP': 'IP',
+            '需求': '删除',
+            '老指标': '名称',
+            '新指标': ''
+        }
+
+        # 添加表头
+        headers = [col['name'] for col in columns]
+        ws.append(headers)
+
+        # 设置表头样式（通过列索引访问）
+        for col_idx, col in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = Font(bold=True, color="0050B3")
+            cell.fill = PatternFill(start_color="E6F7FF", end_color="E6F7FF", fill_type="solid")
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+        # 添加数据行
+        for row_data in data:
+            row_values = []
+            for col in columns:
+                col_name = col['name']
+                if col_name in column_mapping:
+                    value = column_mapping[col_name]
+                    if value == '删除':
+                        row_values.append('删除')
+                    elif value == '':
+                        row_values.append('')
+                    else:
+                        row_values.append(row_data.get(value, ''))
+                else:
+                    row_values.append(row_data.get(col_name, ''))
+
+            ws.append(row_values)
+
+        # 保存到BytesIO
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def _generate_modify_change_plan(self, data):
+        """生成修改类型的变更方案"""
+        try:
+            # 获取修改模板
+            template = TemplateConfig.objects.get(template_type='modify')
+            columns = template.get_column_definitions()
+        except TemplateConfig.DoesNotExist:
+            columns = []
+
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "变更方案"
+
+        # 添加表头
+        headers = [col['name'] for col in columns]
+        ws.append(headers)
+
+        # 设置表头样式（通过列索引访问）
+        for col_idx, col in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = Font(bold=True, color="D46B08")
+            cell.fill = PatternFill(start_color="FFF7E6", end_color="FFF7E6", fill_type="solid")
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+        # 添加数据行（列名与需求列表一一对应）
+        for row_data in data:
+            row_values = [row_data.get(col['name'], '') for col in columns]
+            ws.append(row_values)
+
+        # 保存到BytesIO
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def _generate_modify_rollback_plan(self, data):
+        """生成修改类型的回退方案"""
+        try:
+            # 获取修改模板
+            template = TemplateConfig.objects.get(template_type='modify')
+            columns = template.get_column_definitions()
+        except TemplateConfig.DoesNotExist:
+            columns = []
+
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "回退方案"
+
+        # 添加表头
+        headers = [col['name'] for col in columns]
+        ws.append(headers)
+
+        # 设置表头样式（通过列索引访问）
+        for col_idx, col in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = Font(bold=True, color="D46B08")
+            cell.fill = PatternFill(start_color="FFF7E6", end_color="FFF7E6", fill_type="solid")
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+        # 添加数据行（老指标和新指标互换）
+        for row_data in data:
+            row_values = []
+            for col in columns:
+                col_name = col['name']
+                if col_name == '老指标':
+                    row_values.append(row_data.get('新指标', ''))
+                elif col_name == '新指标':
+                    row_values.append(row_data.get('老指标', ''))
+                else:
+                    row_values.append(row_data.get(col_name, ''))
+            ws.append(row_values)
+
+        # 保存到BytesIO
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def _generate_import_change_plan(self, data, is_rollback=False):
+        """生成导入类型的变更方案或回退方案"""
+        try:
+            # 获取导入模板
+            template = TemplateConfig.objects.get(template_type='import')
+            columns = template.get_column_definitions()
+        except TemplateConfig.DoesNotExist:
+            columns = []
+
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "变更方案" if not is_rollback else "回退方案"
+
+        # 添加表头
+        headers = [col['name'] for col in columns]
+        ws.append(headers)
+
+        # 设置表头样式（通过列索引访问）
+        for col_idx, col in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = Font(bold=True, color="0050B3")
+            cell.fill = PatternFill(start_color="E6F7FF", end_color="E6F7FF", fill_type="solid")
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+        # 添加数据行
+        for row_data in data:
+            if is_rollback:
+                # 回退方案：需求→'删除'
+                row_values = []
+                for col in columns:
+                    col_name = col['name']
+                    if col_name == '需求':
+                        row_values.append('删除')
+                    elif col_name == '新指标':
+                        row_values.append('')
+                    else:
+                        row_values.append(row_data.get(col_name, ''))
+                ws.append(row_values)
+            else:
+                # 变更方案：列名与需求列表一一对应
+                row_values = [row_data.get(col['name'], '') for col in columns]
+                ws.append(row_values)
+
+        # 保存到BytesIO
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
 
 
 class TemplateConfigViewSet(viewsets.ModelViewSet):

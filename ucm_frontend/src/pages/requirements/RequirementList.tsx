@@ -484,6 +484,59 @@ export default function RequirementList() {
     }
   };
 
+  // 导出变更方案功能
+  const handleExportChangePlan = async () => {
+    if (!selectedDate) {
+      message.warning('请先选择日期');
+      return;
+    }
+
+    message.loading('正在导出变更方案，请稍候...', 0);
+
+    try {
+      // 调用后端API
+      const response = await api.post('/requirements/export_change_plan/', {
+        ucm_change_date: selectedDate
+      }, {
+        responseType: 'blob'  // 重要：设置为blob以处理二进制数据
+      });
+
+      // 创建Blob对象
+      const blob = new Blob([response.data], { type: 'application/zip' });
+
+      // 下载文件
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `UCM变更方案_${selectedDate}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      message.destroy();
+      message.success('导出变更方案成功');
+    } catch (error: any) {
+      message.destroy();
+      if (error.response?.data) {
+        // 尝试解析错误信息
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const errorData = JSON.parse(reader.result as string);
+            message.error(errorData.error || '导出变更方案失败');
+          } catch {
+            message.error('导出变更方案失败');
+          }
+        };
+        reader.readAsText(error.response.data);
+      } else {
+        message.error('导出变更方案失败');
+      }
+      console.error('导出变更方案错误:', error);
+    }
+  };
+
   // 构建左侧固定列
   const leftFixedColumns = [
     {
@@ -754,14 +807,23 @@ export default function RequirementList() {
 
             {/* 导出按钮 */}
             <div style={{ marginLeft: 'auto' }}>
-              <Button
-                type="primary"
-                icon={<ExportOutlined />}
-                onClick={handleExport}
-                disabled={data.length === 0}
-              >
-                导出需求
-              </Button>
+              <Space>
+                <Button
+                  type="primary"
+                  icon={<ExportOutlined />}
+                  onClick={handleExport}
+                  disabled={data.length === 0}
+                >
+                  导出需求
+                </Button>
+                <Button
+                  icon={<ExportOutlined />}
+                  onClick={handleExportChangePlan}
+                  disabled={!selectedDate}
+                >
+                  导出变更方案
+                </Button>
+              </Space>
             </div>
           </div>
         </div>
