@@ -196,7 +196,7 @@ export default function RequirementRegister() {
       const response = await api.get('/manufacturers/');
       setVendorVersionData(response.data.results || []);
     } catch (error) {
-      console.error('加载厂商版本数据失败:', error);
+      console.error('加载品牌(厂商)版本数据失败:', error);
     }
   };
 
@@ -209,7 +209,7 @@ export default function RequirementRegister() {
       return uniqueDeviceTypes;
     }
 
-    if (columnName === '厂商') {
+    if (columnName === '品牌(厂商)') {
       const deviceType = rowData['设备类型'];
       if (!deviceType) return [];
 
@@ -223,7 +223,7 @@ export default function RequirementRegister() {
 
     if (columnName === '版本') {
       const deviceType = rowData['设备类型'];
-      const manufacturer = rowData['厂商'];
+      const manufacturer = rowData['品牌(厂商)'];
       if (!deviceType || !manufacturer) return [];
 
       const uniqueVersions = [...new Set(
@@ -273,19 +273,19 @@ export default function RequirementRegister() {
       }
     });
 
-    // 级联校验：设备类型、厂商、版本
+    // 级联校验：设备类型、品牌(厂商)、版本
     const deviceType = rowData['设备类型'];
-    const manufacturer = rowData['厂商'];
+    const manufacturer = rowData['品牌(厂商)'];
     const version = rowData['版本'];
 
     console.log('  - 级联校验:', { deviceType, manufacturer, version });
 
-    // 规则：如果选择了设备类型，必须选择厂商
+    // 规则：如果选择了设备类型，必须选择品牌(厂商)
     if (deviceType && !manufacturer) {
-      errors['厂商'] = '请选择厂商';
+      errors['品牌(厂商)'] = '请选择品牌(厂商)';
     }
 
-    // 规则：如果选择了厂商，必须选择版本
+    // 规则：如果选择了品牌(厂商)，必须选择版本
     if (manufacturer && !version) {
       errors['版本'] = '请选择版本';
     }
@@ -301,7 +301,7 @@ export default function RequirementRegister() {
       console.log('  - 组合校验结果:', isValidCombination);
 
       if (!isValidCombination) {
-        errors['版本'] = '设备类型、厂商、版本组合不匹配';
+        errors['版本'] = '设备类型、品牌(厂商)、版本组合不匹配';
       }
     }
 
@@ -409,13 +409,12 @@ export default function RequirementRegister() {
 
           // 级联处理
           if (columnName === '设备类型') {
-            // 重新选择设备类型，清空厂商和版本
-            newData['厂商'] = '';
-            newData['版本'] = '';
-            console.log('  - 级联清空厂商和版本');
-          } else if (columnName === '厂商') {
-            // 重新选择厂商，清空版本
-            newData['版本'] = '';
+            // 重新选择设备类型，清空品牌(厂商)和版本
+                  newData['品牌(厂商)'] = '';
+                  newData['版本'] = '';
+                  console.log('  - 级联清空品牌(厂商)和版本');
+                } else if (columnName === '品牌(厂商)') {
+                  // 重新选择品牌(厂商)，清空版本            newData['版本'] = '';
             console.log('  - 级联清空版本');
           }
 

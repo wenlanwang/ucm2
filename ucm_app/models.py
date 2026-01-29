@@ -6,7 +6,7 @@ import json
 class ManufacturerVersionInfo(models.Model):
     """厂商版本信息表"""
     device_type = models.CharField(max_length=100, verbose_name='设备类型')
-    manufacturer = models.CharField(max_length=100, verbose_name='厂商')
+    manufacturer = models.CharField(max_length=100, verbose_name='品牌(厂商)')
     version = models.CharField(max_length=100, verbose_name='版本')
     auth_method = models.CharField(max_length=100, verbose_name='认证方式')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
@@ -47,7 +47,7 @@ class UCMDeviceInventory(models.Model):
     """UCM设备清单表"""
     name = models.CharField(max_length=200, verbose_name='名称')
     device_type = models.CharField(max_length=100, verbose_name='设备类型')
-    manufacturer = models.CharField(max_length=100, verbose_name='厂商')
+    manufacturer = models.CharField(max_length=100, verbose_name='品牌(厂商)')
     version = models.CharField(max_length=100, verbose_name='版本')
     ip = models.CharField(max_length=50, verbose_name='IP')
     other_ips = models.TextField(blank=True, null=True, verbose_name='其他IP')

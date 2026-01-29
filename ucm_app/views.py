@@ -38,7 +38,7 @@ class ManufacturerVersionInfoViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def get_manufacturers(self, request):
-        """根据设备类型获取厂商列表"""
+        """根据设备类型获取品牌(厂商)列表"""
         device_type = request.query_params.get('device_type')
         if not device_type:
             return Response({'error': 'device_type参数必填'}, status=status.HTTP_400_BAD_REQUEST)
@@ -50,7 +50,7 @@ class ManufacturerVersionInfoViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def get_versions(self, request):
-        """根据设备类型和厂商获取版本列表"""
+        """根据设备类型和品牌(厂商)获取版本列表"""
         device_type = request.query_params.get('device_type')
         manufacturer = request.query_params.get('manufacturer')
         if not device_type or not manufacturer:
@@ -65,7 +65,7 @@ class ManufacturerVersionInfoViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def get_login_methods(self, request):
-        """根据设备类型、厂商和版本获取认证方式"""
+        """根据设备类型、品牌(厂商)和版本获取认证方式"""
         device_type = request.query_params.get('device_type')
         manufacturer = request.query_params.get('manufacturer')
         version = request.query_params.get('version')
@@ -141,7 +141,7 @@ class UCMDeviceInventoryViewSet(viewsets.ModelViewSet):
                     device = UCMDeviceInventory(
                         name=row_data.get('名称', ''),
                         device_type=row_data.get('设备类型', ''),
-                        manufacturer=row_data.get('厂商', ''),
+                        manufacturer=row_data.get('品牌(厂商)', ''),
                         version=row_data.get('版本', ''),
                         ip=row_data.get('IP', ''),
                         other_ips=row_data.get('其他IP', ''),
@@ -440,17 +440,17 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                         row_validation['errors'][col_name] = '不在可选值清单中'
                         row_validation['is_valid'] = False
                 
-                # 级联关系校验（设备类型→厂商→版本）
+                # 级联关系校验（设备类型→品牌(厂商)→版本）
             device_type = row_data.get('设备类型', '').strip()
-            manufacturer = row_data.get('厂商', '').strip()
+            manufacturer = row_data.get('品牌(厂商)', '').strip()
             version = row_data.get('版本', '').strip()
 
-            # 规则：如果选择了设备类型，必须选择厂商
+            # 规则：如果选择了设备类型，必须选择品牌(厂商)
             if device_type and not manufacturer:
-                row_validation['errors']['厂商'] = '请选择厂商'
+                row_validation['errors']['品牌(厂商)'] = '请选择品牌(厂商)'
                 row_validation['is_valid'] = False
 
-            # 规则：如果选择了厂商，必须选择版本
+            # 规则：如果选择了品牌(厂商)，必须选择版本
             if manufacturer and not version:
                 row_validation['errors']['版本'] = '请选择版本'
                 row_validation['is_valid'] = False
@@ -464,7 +464,7 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 ).exists()
 
                 if not is_valid_combination:
-                    row_validation['errors']['版本'] = '设备类型、厂商、版本组合不匹配'
+                    row_validation['errors']['版本'] = '设备类型、品牌(厂商)、版本组合不匹配'
                     row_validation['is_valid'] = False
 
             validation_results.append(row_validation)
