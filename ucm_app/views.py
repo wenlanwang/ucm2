@@ -488,20 +488,24 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         for req_data in requirements:
             name = req_data.get('名称', '')
             ip = req_data.get('IP', '')
-            
-            # 检查名称+UCM变更日期
-            existing_by_name = UCMRequirement.objects.filter(
-                device_name=name,
-                ucm_change_date=ucm_change_date,
-                status='pending'
-            ).first()
-            
-            # 检查IP+UCM变更日期
-            existing_by_ip = UCMRequirement.objects.filter(
-                ip=ip,
-                ucm_change_date=ucm_change_date,
-                status='pending'
-            ).first()
+
+            # 检查名称+UCM变更日期（仅当 name 不为空时检查）
+            existing_by_name = None
+            if name:
+                existing_by_name = UCMRequirement.objects.filter(
+                    device_name=name,
+                    ucm_change_date=ucm_change_date,
+                    status='pending'
+                ).first()
+
+            # 检查IP+UCM变更日期（仅当 ip 不为空时检查）
+            existing_by_ip = None
+            if ip:
+                existing_by_ip = UCMRequirement.objects.filter(
+                    ip=ip,
+                    ucm_change_date=ucm_change_date,
+                    status='pending'
+                ).first()
             
             if existing_by_name or existing_by_ip:
                 duplicate_info = {
@@ -548,13 +552,20 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 for req_data in requirements:
                     name = req_data.get('名称', '')
                     ip = req_data.get('IP', '')
-                    
+
                     # 检查重复（名称+UCM变更日期 或 IP+UCM变更日期）
-                    existing = UCMRequirement.objects.filter(
-                        Q(device_name=name) | Q(ip=ip),
-                        ucm_change_date=ucm_change_date,
-                        status='pending'
-                    ).first()
+                    # 仅当字段不为空时才进行重复检查
+                    query = Q(ucm_change_date=ucm_change_date, status='pending')
+                    if name:
+                        query |= Q(device_name=name)
+                    if ip:
+                        query |= Q(ip=ip)
+
+                    # 如果没有任何有效字段，跳过重复检查
+                    if not name and not ip:
+                        existing = None
+                    else:
+                        existing = UCMRequirement.objects.filter(query).first()
                     
                     if existing:
                         skipped_count += 1
