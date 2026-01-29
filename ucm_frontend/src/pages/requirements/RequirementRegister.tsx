@@ -49,6 +49,7 @@ export default function RequirementRegister() {
   const [submitting, setSubmitting] = useState(false);
   const [isAllValid, setIsAllValid] = useState(false);
   const [fileList, setFileList] = useState<any[]>([]);
+  const [recordCount, setRecordCount] = useState(0);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -623,7 +624,7 @@ export default function RequirementRegister() {
     fileInputRef.current?.click();
   };
   
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFileList([{
@@ -632,6 +633,21 @@ export default function RequirementRegister() {
         status: 'done',
         originFileObj: file,
       }]);
+
+      // 解析 Excel 获取记录条数
+      try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+        // 记录条数 = 总行数 - 1（减去表头）
+        const count = jsonData.length > 0 ? jsonData.length - 1 : 0;
+        setRecordCount(count);
+      } catch (error) {
+        console.error('解析Excel失败:', error);
+        setRecordCount(0);
+      }
     }
   };
   
@@ -1044,9 +1060,54 @@ export default function RequirementRegister() {
           activeKey={activeTab}
           onChange={handleTabChange}
           items={[
-            { key: 'import', label: '导入' },
-            { key: 'modify', label: '修改' },
-            { key: 'delete', label: '删除' },
+            {
+              key: 'import',
+              label: (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '4px',
+                  backgroundColor: activeTab === 'import' ? typeColumnStyles.import.backgroundColor : 'transparent',
+                  color: activeTab === 'import' ? typeColumnStyles.import.textColor : 'inherit',
+                  fontWeight: activeTab === 'import' ? 600 : 'normal',
+                  border: activeTab === 'import' ? `1px solid ${typeColumnStyles.import.borderColor}` : 'none',
+                  display: 'inline-block'
+                }}>
+                  导入
+                </span>
+              )
+            },
+            {
+              key: 'modify',
+              label: (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '4px',
+                  backgroundColor: activeTab === 'modify' ? typeColumnStyles.modify.backgroundColor : 'transparent',
+                  color: activeTab === 'modify' ? typeColumnStyles.modify.textColor : 'inherit',
+                  fontWeight: activeTab === 'modify' ? 600 : 'normal',
+                  border: activeTab === 'modify' ? `1px solid ${typeColumnStyles.modify.borderColor}` : 'none',
+                  display: 'inline-block'
+                }}>
+                  修改
+                </span>
+              )
+            },
+            {
+              key: 'delete',
+              label: (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '4px',
+                  backgroundColor: activeTab === 'delete' ? typeColumnStyles.delete.backgroundColor : 'transparent',
+                  color: activeTab === 'delete' ? typeColumnStyles.delete.textColor : 'inherit',
+                  fontWeight: activeTab === 'delete' ? 600 : 'normal',
+                  border: activeTab === 'delete' ? `1px solid ${typeColumnStyles.delete.borderColor}` : 'none',
+                  display: 'inline-block'
+                }}>
+                  删除
+                </span>
+              )
+            },
           ]}
         />
         
@@ -1150,12 +1211,13 @@ export default function RequirementRegister() {
       
       {/* 导入Excel弹框 */}
       <Modal
-        title="批量上传"
+        title={`批量上传--${activeTab === 'import' ? '导入附件' : activeTab === 'modify' ? '修改附件' : '删除附件'}`}
         open={uploadModalVisible}
         onOk={handleImportExcel}
         onCancel={() => {
           setUploadModalVisible(false);
           setFileList([]);
+          setRecordCount(0);
         }}
         confirmLoading={loading}
       >
@@ -1167,12 +1229,29 @@ export default function RequirementRegister() {
           onChange={handleFileSelect}
         />
         {fileList.length > 0 ? (
-          <div>
-            <p>已选择文件：{fileList[0].name}</p>
-            <p>文件大小：{(fileList[0].originFileObj.size / 1024).toFixed(2)} KB</p>
+          <div style={{
+            padding: '16px',
+            backgroundColor: '#f6ffed',
+            border: '1px solid #b7eb8f',
+            borderRadius: '4px'
+          }}>
+            <p style={{ margin: 0, color: '#52c41a', fontWeight: 'bold' }}>
+              <CheckCircleOutlined /> 已选择文件
+            </p>
+            <p style={{ margin: '8px 0 0 0' }}>文件名：{fileList[0].name}</p>
+            <p style={{ margin: '4px 0' }}>文件大小：{(fileList[0].originFileObj.size / 1024).toFixed(2)} KB</p>
+            <p style={{ margin: '4px 0' }}>记录条数：{recordCount} 条</p>
           </div>
         ) : (
-          <p>请点击下方按钮选择文件</p>
+          <div style={{
+            padding: '16px',
+            backgroundColor: '#fafafa',
+            border: '1px dashed #d9d9d9',
+            borderRadius: '4px',
+            textAlign: 'center'
+          }}>
+            <p style={{ margin: 0, color: '#999' }}>请点击下方按钮选择文件</p>
+          </div>
         )}
         <Button
           type="primary"
