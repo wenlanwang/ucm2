@@ -1,5 +1,22 @@
+这个过程是可以的：
+PS D:\dev\ucm2> git remote remove origin
+PS D:\dev\ucm2> git remote add origin "https://github.com/wenlanwang/ucm2.git"
+PS D:\dev\ucm2> $url = git config --get remote.origin.url
+PS D:\dev\ucm2> Write-Host "[$url]"
+[https://github.com/wenlanwang/ucm2.git]
 PS D:\dev\ucm2> git push origin master
-fatal: unable to access 'https://github.com/wenlanwang/ucm2.git/  ': Recv failure: Connection was reset
+
+Enumerating objects: 28, done.
+Counting objects: 100% (28/28), done.
+Delta compression using up to 16 threads
+Compressing objects: 100% (15/15), done.
+Writing objects: 100% (15/15), 23.93 KiB | 742.00 KiB/s, done.
+Total 15 (delta 13), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (13/13), completed with 13 local objects.
+To https://github.com/wenlanwang/ucm2.git
+   9941315..bc0a5ce  master -> master
+
+============================================
 
 用notepad++ 空白字符处理--》删除行尾空格，可以解决
 
@@ -8,11 +25,17 @@ git remote remove origin
 git remote add origin https://github.com/wenlanwang/ucm2.git
 git remote set-url origin https://github.com/wenlanwang/ucm2.git
 
+
+
 $url = git config --get remote.origin.url
 Write-Host "[$url]"
 
 git remote -v
 git config --get remote.origin.url
+
+
+$url = git config --get remote.origin.url
+$url.ToCharArray() | % { "$([int]$_): '$_'" }
 
 =================
 # 获取原始 URL

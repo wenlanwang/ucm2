@@ -3,6 +3,7 @@ import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, 
 import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -529,31 +530,90 @@ export default function RequirementRegister() {
   
   const handleDownloadTemplate = async () => {
     try {
-      // 当activeTab为'delete'时，下载'import'类型的模板文件
-      const templateType = activeTab === 'delete' ? 'import' : activeTab;
-      const response = await api.get(`/templates/download_template/?template_type=${templateType}`, {
-        responseType: 'blob'
+      // 获取当前类型的模板列配置
+      const columns = templateColumns || [];
+
+      if (columns.length === 0) {
+        message.warning('模板列配置未加载，请稍后再试');
+        return;
+      }
+
+      // 构建表头（只有动态列）
+      const headers = columns.map(col => col.name);
+
+      // 创建工作簿
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('模板');
+
+      // 添加表头行
+      const headerRow = worksheet.addRow(headers);
+
+      // 类型配置
+      const typeConfig = {
+        import: { bgColor: 'FFE6F7FF', textColor: 'FF0050B3' },
+        modify: { bgColor: 'FFFFF7E6', textColor: 'FFD46B08' },
+        delete: { bgColor: 'FFFFF1F0', textColor: 'FFCF1322' }
+      };
+
+      const config = typeConfig[activeTab];
+
+      // 设置表头样式
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: config.textColor } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: config.bgColor }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
       });
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      // 添加示例数据行（可选，用于演示）
+      const exampleRow = columns.map(col => col.example || '');
+      const exampleRowData = worksheet.addRow(exampleRow);
+      exampleRowData.eachCell((cell) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+
+      // 设置列宽
+      worksheet.columns = columns.map(col => ({ width: col.name.length > 10 ? 20 : 15 }));
+
+      // 生成并下载
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.ms-excel'
+      });
+
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
       const typeMap = {
         import: '导入',
         modify: '修改',
         delete: '删除'
       };
-      // 文件名始终使用activeTab对应的类型名称
       link.setAttribute('download', `${typeMap[activeTab]}_模板.xls`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       message.success('模板下载成功');
     } catch (error) {
       message.error('模板下载失败');
+      console.error('下载模板错误:', error);
     }
   };
   
