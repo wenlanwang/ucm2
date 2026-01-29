@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined } from '@ant-design/icons';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Select } from 'antd';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import { useSearchParams } from 'react-router-dom';
@@ -59,6 +59,15 @@ export default function RequirementList() {
   const [filterSubmitter, setFilterSubmitter] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterKeyword, setFilterKeyword] = useState<string>('');
+
+  // 编辑Modal状态
+  const [editModalVisible, setEditModalVisible] = useState<boolean>(false);
+  const [editingRecord, setEditingRecord] = useState<Requirement | null>(null);
+  const [editForm] = Form.useForm();
+
+  // 校验所需数据
+  const [vendorVersionData, setVendorVersionData] = useState<any[]>([]);
+  const [columnOptions, setColumnOptions] = useState<Record<string, string[]>>({});
 
   const requirementTypeText = {
     import: '导入',
@@ -163,9 +172,10 @@ export default function RequirementList() {
     }
   }, [selectedDate, selectedType]);
 
-  // 加载模板列配置
+  // 加载模板列配置和校验数据
   useEffect(() => {
     loadTemplateColumns();
+    loadValidationData();
   }, []);
 
 // 根据时间规则选择默认日期
@@ -286,6 +296,27 @@ export default function RequirementList() {
     }
   };
 
+  const loadValidationData = async () => {
+    try {
+      // 加载ManufacturerVersionInfo数据
+      const vendorResponse = await api.get('/manufacturer-version-info/');
+      setVendorVersionData(vendorResponse.data.results || vendorResponse.data);
+
+      // 加载列的可选值
+      const columnsResponse = await api.get('/column-options/');
+      const options: Record<string, string[]> = {};
+      (columnsResponse.data.results || columnsResponse.data).forEach((item: any) => {
+        if (!options[item.column_name]) {
+          options[item.column_name] = [];
+        }
+        options[item.column_name].push(item.option_value);
+      });
+      setColumnOptions(options);
+    } catch (error) {
+      console.error('加载校验数据失败:', error);
+    }
+  };
+
   
 
   const handleDelete = async (id: number) => {
@@ -310,6 +341,153 @@ export default function RequirementList() {
     } catch (error) {
       message.error('操作失败');
     }
+  };
+
+  const handleEdit = (record: Requirement) => {
+    setEditingRecord(record);
+    setEditModalVisible(true);
+    // 填充表单数据
+    editForm.setFieldsValue({
+      ...record,
+      ...record.requirement_data_dict
+    });
+  };
+
+  const handleEditSubmit = async () => {
+    try {
+      const values = await editForm.validateFields();
+
+      // 自定义校验
+      const validation = validateFormData(values);
+      if (!validation.valid) {
+        // 显示第一个错误
+        const firstError = Object.values(validation.errors)[0];
+        message.error(firstError);
+        return;
+      }
+
+      const { id, ...updateData } = values;
+
+      // 将表单数据转换为requirement_data_dict格式
+      const requirementData: any = {};
+      Object.keys(updateData).forEach(key => {
+        // 排除固定字段
+        if (!['id', 'requirement_type', 'submitter_name', 'submit_time', 'ucm_change_date', 'status', 'processor_name', 'process_time', 'note'].includes(key)) {
+          requirementData[key] = updateData[key];
+        }
+      });
+
+      await api.patch(`/requirements/${editingRecord?.id}/`, {
+        requirement_data_dict: requirementData,
+        ...updateData
+      });
+
+      message.success('编辑成功');
+      setEditModalVisible(false);
+      editForm.resetFields();
+      loadData();
+    } catch (error: any) {
+      if (error.errorFields) {
+        // 表单验证错误
+        message.error('请检查表单填写');
+      } else {
+        message.error('编辑失败');
+      }
+    }
+  };
+
+  const handleEditCancel = () => {
+    setEditModalVisible(false);
+    editForm.resetFields();
+    setEditingRecord(null);
+  };
+
+  // 校验表单数据
+  const validateFormData = (values: any): { valid: boolean; errors: Record<string, string> } => {
+    const errors: Record<string, string> = {};
+
+    // 获取当前类型的模板列
+    const columns = editingRecord ? templateColumnsByType[editingRecord.requirement_type] || [] : [];
+
+    columns.forEach((col: any) => {
+      const value = values[col.name]?.trim() || '';
+
+      // 必填字段校验
+      if (col.required && !value) {
+        errors[col.name] = '此字段为必填项';
+      }
+
+      // IP地址格式校验
+      if (col.name === 'IP' && value) {
+        const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+        if (!ipv4Pattern.test(value)) {
+          errors[col.name] = 'IP地址格式不正确（IPv4）';
+        }
+      }
+
+      // 可选值校验
+      if (columnOptions[col.name] && value) {
+        if (!columnOptions[col.name].includes(value)) {
+          errors[col.name] = '不在可选值清单中';
+        }
+      }
+    });
+
+    // 级联校验：设备类型、品牌(厂商)、版本
+    const deviceType = values['设备类型'];
+    const manufacturer = values['品牌(厂商)'];
+    const version = values['版本'];
+
+    // 1. 获取有效的可选值
+    const validDeviceTypes = [...new Set(vendorVersionData.map(item => item.device_type))];
+    const validManufacturers = [...new Set(vendorVersionData.map(item => item.manufacturer))];
+    const validVersions = [...new Set(vendorVersionData.map(item => item.version))];
+
+    // 2. 独立校验设备类型（优先级最高）
+    if (deviceType && !validDeviceTypes.includes(deviceType)) {
+      errors['设备类型'] = '设备类型不在可选范围内';
+      return { valid: false, errors };
+    }
+
+    // 3. 独立校验品牌(厂商)（优先级第二）
+    if (manufacturer && !validManufacturers.includes(manufacturer)) {
+      errors['品牌(厂商)'] = '品牌(厂商)不在可选范围内';
+      return { valid: false, errors };
+    }
+
+    // 4. 独立校验版本（优先级第三）
+    if (version && !validVersions.includes(version)) {
+      errors['版本'] = '版本不在可选范围内';
+      return { valid: false, errors };
+    }
+
+    // 5. 规则：如果选择了设备类型，必须选择品牌(厂商)
+    if (deviceType && !manufacturer) {
+      errors['品牌(厂商)'] = '请选择品牌(厂商)';
+    }
+
+    // 6. 规则：如果选择了品牌(厂商)，必须选择版本
+    if (manufacturer && !version) {
+      errors['版本'] = '请选择版本';
+    }
+
+    // 7. 规则：如果三者都填了，检查组合是否有效
+    if (deviceType && manufacturer && version) {
+      const isValidCombination = vendorVersionData.some(
+        item => item.device_type === deviceType &&
+                item.manufacturer === manufacturer &&
+                item.version === version
+      );
+
+      if (!isValidCombination) {
+        errors['版本'] = '设备类型、品牌(厂商)、版本组合不匹配';
+      }
+    }
+
+    return {
+      valid: Object.keys(errors).length === 0,
+      errors
+    };
   };
 
   const handleBatchComplete = async () => {
@@ -634,10 +812,17 @@ export default function RequirementList() {
   const rightFixedColumns = [
     {
       title: '操作',
-      width: 80,
+      width: 120,
       fixed: 'right' as const,
       render: (_: any, record: Requirement) => (
         <Space size="small">
+          <Button
+            size="small"
+            type="text"
+            icon={<EditOutlined />}
+            title="编辑"
+            onClick={() => handleEdit(record)}
+          />
           {record.status === 'pending' && (
             <Popconfirm
               title="确认完成?"
@@ -996,6 +1181,48 @@ export default function RequirementList() {
             },
           }}
         />
+
+        {/* 编辑Modal */}
+        <Modal
+          title={`编辑需求 - ID: ${editingRecord?.id}`}
+          open={editModalVisible}
+          onOk={handleEditSubmit}
+          onCancel={handleEditCancel}
+          width={800}
+          okText="保存"
+          cancelText="取消"
+        >
+          <Form
+            form={editForm}
+            layout="vertical"
+            style={{ marginTop: 24 }}
+          >
+            <Form.Item
+              label="设备名称"
+              name="device_name"
+              rules={[{ required: true, message: '请输入设备名称' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label="IP地址"
+              name="ip"
+              rules={[{ required: true, message: '请输入IP地址' }]}
+            >
+              <Input />
+            </Form.Item>
+            {editingRecord && templateColumnsByType[editingRecord.requirement_type]?.map((col: any, index: number) => (
+              <Form.Item
+                key={index}
+                label={col.name}
+                name={col.name}
+                rules={col.required ? [{ required: true, message: `请输入${col.name}` }] : []}
+              >
+                <Input placeholder={col.example} />
+              </Form.Item>
+            ))}
+          </Form>
+        </Modal>
       </Card>
     </div>
   );
