@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import { useSearchParams } from 'react-router-dom';
+import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import api from '../../services/api';
 
 interface Requirement {
@@ -341,6 +343,147 @@ export default function RequirementList() {
     }
   };
 
+  // 导出功能
+  const handleExport = async () => {
+    if (!selectedDate) {
+      message.warning('请先选择日期');
+      return;
+    }
+
+    message.loading('正在导出，请稍候...', 0);
+
+    try {
+      const zip = new JSZip();
+      const typeConfig = {
+        import: { text: '导入', bgColor: 'FFE6F7FF', textColor: 'FF0050B3' },
+        modify: { text: '修改', bgColor: 'FFFFF7E6', textColor: 'FFD46B08' },
+        delete: { text: '删除', bgColor: 'FFFFF1F0', textColor: 'FFCF1322' }
+      };
+
+      const types: ('import' | 'modify' | 'delete')[] = ['import', 'modify', 'delete'];
+
+      for (const type of types) {
+        // 检查该类型是否有数据（使用 dateStatistics）
+        if (!dateStatistics[type]?.count || dateStatistics[type].count === 0) {
+          continue; // 该类型无数据，跳过
+        }
+
+        // 获取该类型的实际数据
+        const response = await api.get('/requirements/', {
+          params: {
+            ucm_change_date: selectedDate,
+            requirement_type: type
+          }
+        });
+
+        const typeData = response.data.results || response.data;
+
+        if (typeData.length === 0) {
+          continue;
+        }
+
+        // 获取该类型的模板列
+        const columns = templateColumnsByType[type] || [];
+
+        // 创建工作簿
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet(typeConfig[type].text);
+
+        // 构建表头
+        const headers = ['序号', '需求人', '登记时间', 'UCM变更日期', '类型', ...columns.map(col => col.name)];
+
+        // 添加表头行
+        const headerRow = worksheet.addRow(headers);
+
+        // 设置表头样式
+        headerRow.eachCell((cell, colNumber) => {
+          cell.font = { bold: true };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          // 为表头单元格添加边框
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+
+          // 动态列列名染色
+          if (colNumber >= 6) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: typeConfig[type].bgColor }
+            };
+            cell.font = {
+              bold: true,
+              color: { argb: typeConfig[type].textColor }
+            };
+          }
+        });
+
+        // 添加数据行
+        typeData.forEach((item: any, index: number) => {
+          const row = worksheet.addRow([
+            index + 1,
+            item.submitter_name,
+            dayjs(item.submit_time).format('YYYY-MM-DD HH:mm:ss'),
+            dayjs(item.ucm_change_date).format('YYYY-MM-DD'),
+            typeConfig[type].text,
+            ...columns.map(col => item.requirement_data_dict?.[col.name] || '-')
+          ]);
+
+          // 数据行不染色，只设置边框和对齐
+          row.eachCell((cell) => {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            // 为数据单元格添加边框
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+          });
+        });
+
+        // 设置列宽
+        worksheet.columns = [
+          { width: 6 },   // 序号
+          { width: 10 },  // 需求人
+          { width: 20 },  // 登记时间
+          { width: 12 },  // UCM变更日期
+          { width: 8 },   // 类型
+          ...columns.map(() => ({ width: 15 })) // 动态列
+        ];
+
+        // 生成 Buffer
+        const buffer = await workbook.xlsx.writeBuffer();
+
+        // 添加到 ZIP
+        zip.file(`UCM需求_${typeConfig[type].text}.xlsx`, buffer);
+      }
+
+      // 生成 ZIP 文件
+      const content = await zip.generateAsync({ type: 'blob' });
+
+      // 下载 ZIP 文件
+      const url = URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `UCM需求_${selectedDate}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      message.destroy();
+      message.success('导出成功');
+    } catch (error) {
+      message.destroy();
+      message.error('导出失败');
+      console.error('导出错误:', error);
+    }
+  };
+
   // 构建左侧固定列
   const leftFixedColumns = [
     {
@@ -607,6 +750,18 @@ export default function RequirementList() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* 导出按钮 */}
+            <div style={{ marginLeft: 'auto' }}>
+              <Button
+                type="primary"
+                icon={<ExportOutlined />}
+                onClick={handleExport}
+                disabled={data.length === 0}
+              >
+                导出需求
+              </Button>
             </div>
           </div>
         </div>
