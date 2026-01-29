@@ -374,6 +374,31 @@ export default function RequirementList() {
       width: 120,
       render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
     },
+    {
+      title: '类型',
+      dataIndex: 'requirement_type',
+      width: 70,
+      render: (type: 'import' | 'modify' | 'delete') => {
+        const typeConfig = {
+          import: { text: '导入', bgColor: '#e6f7ff', textColor: '#0050b3' },
+          modify: { text: '修改', bgColor: '#fff7e6', textColor: '#d46b08' },
+          delete: { text: '删除', bgColor: '#fff1f0', textColor: '#cf1322' }
+        };
+        const config = typeConfig[type];
+        return (
+          <span style={{
+            backgroundColor: config.bgColor,
+            color: config.textColor,
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: 'bold'
+          }}>
+            {config.text}
+          </span>
+        );
+      },
+    },
     // 动态列（根据选中的类型对应的模板配置）
     ...(templateColumnsByType[selectedType] || []).map((col: any) => {
       // 当selectedType为'delete'时，使用'import'的列配置，但表头色调保持红色
