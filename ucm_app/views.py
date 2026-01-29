@@ -267,22 +267,18 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             this_saturday = now + timedelta(days=(5 - now.weekday()) % 7)
             this_saturday = this_saturday.replace(hour=0, minute=0, second=0, microsecond=0)
 
-            # 计算下周三
-            next_wednesday = this_wednesday + timedelta(days=7)
+            # 生成本周及未来3周的周三和周六
+            candidates = []
+            for week in range(4):  # 0=本周, 1=下周, 2=3周后, 3=4周后
+                # 添加周三
+                wednesday = this_wednesday + timedelta(weeks=week)
+                wednesday_dl = wednesday - timedelta(hours=config.wednesday_deadline_hours)
+                candidates.append((wednesday, wednesday_dl, '周三'))
 
-            # 计算下周六
-            next_saturday = this_saturday + timedelta(days=7)
-
-            # 检查是否可选（周三提前7小时，周六提前31小时）
-            wednesday_deadline = this_wednesday - timedelta(hours=config.wednesday_deadline_hours)
-            saturday_deadline = this_saturday - timedelta(hours=config.saturday_deadline_hours)
-
-            candidates = [
-                (this_wednesday, wednesday_deadline, '周三'),
-                (this_saturday, saturday_deadline, '周六'),
-                (next_wednesday, wednesday_deadline + timedelta(days=7), '下周三'),
-                (next_saturday, saturday_deadline + timedelta(days=7), '下周六')
-            ]
+                # 添加周六
+                saturday = this_saturday + timedelta(weeks=week)
+                saturday_dl = saturday - timedelta(hours=config.saturday_deadline_hours)
+                candidates.append((saturday, saturday_dl, '周六'))
 
             # 星期映射
             weekday_map = {
