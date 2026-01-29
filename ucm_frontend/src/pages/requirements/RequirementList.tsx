@@ -89,11 +89,16 @@ export default function RequirementList() {
 
   // 处理URL参数
   useEffect(() => {
+    console.log('=== URL参数处理 ===');
+    console.log('当前URL参数:', Object.fromEntries(searchParams.entries()));
+    
     // 检查是否有高亮ID参数，只有当有高亮ID时，说明是从需求登记页跳转过来的
     const highlightIdsParam = searchParams.get('highlight_ids');
+    console.log('highlightIdsParam:', highlightIdsParam);
 
     if (!highlightIdsParam) {
       // 如果没有高亮ID，说明是刷新页面或直接访问，不处理URL参数
+      console.log('没有高亮ID参数，跳过');
       return;
     }
 
@@ -104,9 +109,13 @@ export default function RequirementList() {
     // 设置高亮ID
     if (highlightIdsParam) {
       const ids = highlightIdsParam.split(',').map(Number).filter(n => !isNaN(n));
+      console.log('高亮ID参数:', highlightIdsParam);
+      console.log('解析后的ID数组:', ids);
       if (ids.length > 0) {
         setHighlightIds(ids);
+        console.log('已设置高亮ID:', ids);
         setTimeout(() => {
+          console.log('5秒后清除高亮ID');
           setHighlightIds([]);
         }, 5000);
       }
@@ -938,10 +947,38 @@ export default function RequirementList() {
           scroll={{ x: 'max-content', y: 440 }}
           rowClassName={(record) => {
             // 如果该记录ID在高亮列表中，返回高亮样式
-            if (highlightIds.includes(record.id)) {
-              return 'highlight-row';
+            const isHighlighted = highlightIds.includes(record.id);
+            const className = isHighlighted ? 'highlight-row' : '';
+            console.log('rowClassName调用 - 记录ID:', record.id, 'isHighlighted:', isHighlighted, 'highlightIds:', highlightIds, '返回类名:', className);
+            return className;
+          }}
+          onRow={(record) => {
+            const isHighlighted = highlightIds.includes(record.id);
+            if (!isHighlighted) return {};
+
+            // 直接返回带动画的内联样式
+            const style = {
+              animation: 'highlightFadeOut 5s ease-out forwards',
+            };
+
+            // 动态创建keyframes样式 - 浅蓝色背景渐变消失
+            const keyframes = `
+              @keyframes highlightFadeOut {
+                0% { background-color: #e6f7ff; }
+                100% { background-color: transparent; }
+              }
+            `;
+
+            // 创建或更新style标签
+            let styleTag = document.getElementById('highlight-animation');
+            if (!styleTag) {
+              styleTag = document.createElement('style');
+              styleTag.id = 'highlight-animation';
+              document.head.appendChild(styleTag);
             }
-            return '';
+            styleTag.textContent = keyframes;
+
+            return { style };
           }}
           pagination={{
             current: currentPage,
