@@ -13,6 +13,7 @@ import ColumnOptionsManage from './pages/admin/ColumnOptionsManage';
 import InventoryManage from './pages/admin/InventoryManage';
 import TemplateManage from './pages/admin/TemplateManage';
 import DeadlineSettings from './pages/admin/DeadlineSettings';
+import ProfileSettings from './pages/ProfileSettings';
 import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
@@ -40,6 +41,7 @@ function App() {
               <Route path="templates" element={<ErrorBoundary><TemplateManage /></ErrorBoundary>} />
               <Route path="deadline-settings" element={<ErrorBoundary><DeadlineSettings /></ErrorBoundary>} />
             </Route>
+            <Route path="settings" element={<ErrorBoundary><ProfileSettings /></ErrorBoundary>} />
           </Route>
         </Routes>
       </BrowserRouter>

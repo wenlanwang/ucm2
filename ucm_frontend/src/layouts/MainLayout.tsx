@@ -23,6 +23,7 @@ export default function MainLayout() {
       key: 'profile',
       icon: <UserOutlined />,
       label: '个人信息',
+      onClick: () => navigate('/settings'),
     },
     {
       type: 'divider',

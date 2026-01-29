@@ -1152,6 +1152,35 @@ def user_logout(request):
     return Response({'success': True})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """修改密码API"""
+    try:
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+        
+        if not old_password or not new_password:
+            return Response({'error': '请提供原密码和新密码'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if len(new_password) < 6:
+            return Response({'error': '新密码至少6位'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user = request.user
+        
+        # 验证原密码
+        if not user.check_password(old_password):
+            return Response({'error': '原密码错误'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 修改密码
+        user.set_password(new_password)
+        user.save()
+        
+        return Response({'success': True, 'message': '密码修改成功'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_current_user(request):

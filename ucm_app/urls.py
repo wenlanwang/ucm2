@@ -13,6 +13,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('auth/login/', views.user_login, name='user_login'),
     path('auth/logout/', views.user_logout, name='user_logout'),
+    path('auth/change_password/', views.change_password, name='change_password'),
     path('auth/current-user/', views.get_current_user, name='get_current_user'),
     path('ucm-date-config/', views.get_ucm_date_config, name='get_ucm_date_config'),
     path('deadline_config/', views.deadline_config, name='deadline_config'),
