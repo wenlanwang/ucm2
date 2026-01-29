@@ -287,19 +287,25 @@ export default function RequirementRegister() {
     const validManufacturers = [...new Set(vendorVersionData.map(item => item.manufacturer))];
     const validVersions = [...new Set(vendorVersionData.map(item => item.version))];
 
-    // 2. 独立校验设备类型
+    // 2. 独立校验设备类型（优先级最高）
     if (deviceType && !validDeviceTypes.includes(deviceType)) {
       errors['设备类型'] = '设备类型不在可选范围内';
+      // 如果设备类型无效，不继续校验
+      return { is_valid: false, errors, warnings };
     }
 
-    // 3. 独立校验品牌(厂商)
+    // 3. 独立校验品牌(厂商)（优先级第二）
     if (manufacturer && !validManufacturers.includes(manufacturer)) {
       errors['品牌(厂商)'] = '品牌(厂商)不在可选范围内';
+      // 如果品牌(厂商)无效，不继续校验
+      return { is_valid: false, errors, warnings };
     }
 
-    // 4. 独立校验版本
+    // 4. 独立校验版本（优先级第三）
     if (version && !validVersions.includes(version)) {
       errors['版本'] = '版本不在可选范围内';
+      // 如果版本无效，不继续校验
+      return { is_valid: false, errors, warnings };
     }
 
     // 5. 规则：如果选择了设备类型，必须选择品牌(厂商)
@@ -784,6 +790,7 @@ export default function RequirementRegister() {
             excel_data: newRows.map(row => row.data)
           });
 
+          console.log('后端校验结果:', response.data);
           const validationResults = response.data.validation_results;
           const validatedRows = newRows.map((row, index) => ({
             ...row,
@@ -793,6 +800,8 @@ export default function RequirementRegister() {
               warnings: validationResults[index]?.warnings || {}
             }
           }));
+
+          console.log('校验后的行数据:', validatedRows);
 
           setTableData(validatedRows);
           setFileList([]);

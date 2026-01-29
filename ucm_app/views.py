@@ -430,18 +430,46 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                     if not re.match(ipv4_pattern, value):
                         row_validation['errors'][col_name] = 'IP地址格式不正确（IPv4）'
                         row_validation['is_valid'] = False
-                        continue
+                    continue
                 
                 # 可选值校验
                 if col_name in column_options and value:
                     if value not in column_options[col_name]:
                         row_validation['errors'][col_name] = '不在可选值清单中'
                         row_validation['is_valid'] = False
-                
-                # 级联关系校验（设备类型→品牌(厂商)→版本）
+            
+            # 级联关系校验（设备类型→品牌(厂商)→版本）
             device_type = row_data.get('设备类型', '').strip()
             manufacturer = row_data.get('品牌(厂商)', '').strip()
             version = row_data.get('版本', '').strip()
+
+            # 获取所有有效的可选值
+            valid_device_types = ManufacturerVersionInfo.objects.values_list(
+                'device_type', flat=True
+            ).distinct()
+
+            valid_manufacturers = ManufacturerVersionInfo.objects.values_list(
+                'manufacturer', flat=True
+            ).distinct()
+
+            valid_versions = ManufacturerVersionInfo.objects.values_list(
+                'version', flat=True
+            ).distinct()
+
+            # 独立校验设备类型（优先级最高）
+            if device_type and device_type not in valid_device_types:
+                row_validation['errors']['设备类型'] = '设备类型不在可选范围内'
+                row_validation['is_valid'] = False
+
+            # 独立校验品牌(厂商)（优先级第二）
+            if manufacturer and manufacturer not in valid_manufacturers:
+                row_validation['errors']['品牌(厂商)'] = '品牌(厂商)不在可选范围内'
+                row_validation['is_valid'] = False
+
+            # 独立校验版本（优先级第三）
+            if version and version not in valid_versions:
+                row_validation['errors']['版本'] = '版本不在可选范围内'
+                row_validation['is_valid'] = False
 
             # 规则：如果选择了设备类型，必须选择品牌(厂商)
             if device_type and not manufacturer:
@@ -465,8 +493,7 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                     row_validation['errors']['版本'] = '设备类型、品牌(厂商)、版本组合不匹配'
                     row_validation['is_valid'] = False
 
-            validation_results.append(row_validation)
-        
+            validation_results.append(row_validation)        
         return Response({
             'valid': True,
             'validation_results': validation_results
@@ -614,19 +641,17 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                             })
                             continue
 
-                    # 检查重复（名称+UCM变更日期 或 IP+UCM变更日期）
-                    # 仅当字段不为空时才进行重复检查
-                    query = Q(ucm_change_date=ucm_change_date, status='pending')
-                    if name:
-                        query |= Q(device_name=name)
-                    if ip:
-                        query |= Q(ip=ip)
+                    # 检查重复（同一UCM变更日期、同一需求类型下的名称或IP重复）
+                    if name or ip:
+                        query = Q(ucm_change_date=ucm_change_date, status='pending', requirement_type=requirement_type)
+                        if name:
+                            query &= Q(device_name=name)
+                        if ip:
+                            query &= Q(ip=ip)
 
-                    # 如果没有任何有效字段，跳过重复检查
-                    if not name and not ip:
-                        existing = None
-                    else:
                         existing = UCMRequirement.objects.filter(query).first()
+                    else:
+                        existing = None
 
                     if existing:
                         skipped_count += 1
