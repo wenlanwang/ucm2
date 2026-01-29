@@ -503,9 +503,10 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
     def check_duplicates(self, request):
         """检查重复需求"""
         ucm_change_date = request.data.get('ucm_change_date')
+        requirement_type = request.data.get('requirement_type')
         requirements = request.data.get('requirements', [])
         
-        if not ucm_change_date or not requirements:
+        if not ucm_change_date or not requirement_type or not requirements:
             return Response({'error': '参数不完整'}, status=status.HTTP_400_BAD_REQUEST)
         
         duplicates = []
@@ -514,40 +515,22 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             name = req_data.get('名称', '')
             ip = req_data.get('IP', '')
 
-            # 检查名称+UCM变更日期（仅当 name 不为空时检查）
-            existing_by_name = None
-            if name:
-                existing_by_name = UCMRequirement.objects.filter(
-                    device_name=name,
-                    ucm_change_date=ucm_change_date,
-                    status='pending'
-                ).first()
+            # 检查同一UCM变更日期、同一需求类型下的名称或IP重复
+            if name or ip:
+                query = Q(ucm_change_date=ucm_change_date, status='pending', requirement_type=requirement_type)
+                if name:
+                    query &= Q(device_name=name)
+                if ip:
+                    query &= Q(ip=ip)
 
-            # 检查IP+UCM变更日期（仅当 ip 不为空时检查）
-            existing_by_ip = None
-            if ip:
-                existing_by_ip = UCMRequirement.objects.filter(
-                    ip=ip,
-                    ucm_change_date=ucm_change_date,
-                    status='pending'
-                ).first()
-            
-            if existing_by_name or existing_by_ip:
-                duplicate_info = {
-                    'name': name,
-                    'ip': ip
-                }
-                if existing_by_name:
-                    duplicate_info['duplicate_by_name'] = {
-                        'existing_date': existing_by_name.ucm_change_date.strftime('%Y-%m-%d'),
-                        'existing_submitter': existing_by_name.submitter.username
+                existing = UCMRequirement.objects.filter(query).first()
+                
+                if existing:
+                    duplicate_info = {
+                        'name': name,
+                        'ip': ip
                     }
-                if existing_by_ip:
-                    duplicate_info['duplicate_by_ip'] = {
-                        'existing_date': existing_by_ip.ucm_change_date.strftime('%Y-%m-%d'),
-                        'existing_submitter': existing_by_ip.submitter.username
-                    }
-                duplicates.append(duplicate_info)
+                    duplicates.append(duplicate_info)
         
         return Response({
             'has_duplicates': len(duplicates) > 0,

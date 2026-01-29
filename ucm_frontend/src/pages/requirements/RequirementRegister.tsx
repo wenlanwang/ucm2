@@ -876,6 +876,7 @@ export default function RequirementRegister() {
     try {
       // 检查重复
       const checkResponse = await api.post('/requirements/check_duplicates/', {
+        requirement_type: activeTab,
         ucm_change_date: ucmChangeDate.format('YYYY-MM-DD'),
         requirements: tableData.map(row => row.data)
       });
