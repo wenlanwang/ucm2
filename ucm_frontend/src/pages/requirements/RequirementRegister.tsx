@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Card, Button, message, Space, Tabs, DatePicker, Select, Upload, Modal, Table, Input, Tooltip, Tag } from 'antd';
+import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag } from 'antd';
 import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
@@ -7,9 +7,6 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
 import EditableCell from '../../components/EditableCell';
-
-const { Option } = Select;
-const { Dragger } = Upload;
 
 interface ColumnDefinition {
   name: string;
@@ -29,6 +26,7 @@ interface RequirementRow {
 
 interface ValidationResult {
   is_valid: boolean;
+  isValid?: boolean;
   errors: Record<string, string>;
   warnings: Record<string, string>;
 }
@@ -356,7 +354,10 @@ export default function RequirementRegister() {
     const newRow: RequirementRow = {
       id: nextRowId.current++,
       data: rowData,
-      validation
+      validation: {
+        ...validation,
+        isValid: validation.is_valid
+      }
     };
     console.log('新增行数据:', newRow);
     setTableData(prevData => {
@@ -483,7 +484,7 @@ export default function RequirementRegister() {
         if (missingColumns.length > 0) {
           const newData = tableData.map(row => {
             const newErrors = { ...row.validation.errors };
-            missingColumns.forEach(col => {
+            missingColumns.forEach((col: string) => {
               newErrors[col] = '此列数据缺失';
             });
             return {
@@ -557,9 +558,7 @@ export default function RequirementRegister() {
     }
   };
   
-  const handleUploadChange = (info: any) => {
-    setFileList(info.fileList.slice(-1));
-  };
+  
   
   const handleImportClick = () => {
     fileInputRef.current?.click();
@@ -674,7 +673,10 @@ export default function RequirementRegister() {
           return {
             id: nextRowId.current++,
             data: rowData,
-            validation
+            validation: {
+              ...validation,
+              isValid: validation.is_valid
+            }
           };
         });
 
@@ -805,7 +807,7 @@ export default function RequirementRegister() {
       // 当activeTab为'delete'时，requirement_type传递'delete'，但数据结构是"导入模板"格式
       const response = await api.post('/requirements/batch_submit/', {
         requirement_type: activeTab,
-        ucm_change_date: ucmChangeDate.format('YYYY-MM-DD'),
+        ucm_change_date: ucmChangeDate?.format('YYYY-MM-DD') || '',
         requirements: tableData.map(row => row.data)
       });
 
@@ -815,7 +817,7 @@ export default function RequirementRegister() {
         onOk: () => {
           // 跳转到需求列表页面，使用URL参数传递筛选条件
           const params = new URLSearchParams();
-          params.set('ucm_change_date', ucmChangeDate.format('YYYY-MM-DD'));
+          params.set('ucm_change_date', ucmChangeDate?.format('YYYY-MM-DD') || '');
           params.set('requirement_type', activeTab);
           params.set('submitter', user?.username || '');
           
@@ -968,8 +970,8 @@ export default function RequirementRegister() {
               placeholder="选择UCM变更日期"
               value={ucmChangeDate}
               onChange={(date) => setUcmChangeDate(date)}
-              disabledDate={(current) => {
-                return !availableDates.includes(current.format('YYYY-MM-DD'));
+              disabledDate={(date) => {
+                return !availableDates.includes(date.format('YYYY-MM-DD'));
               }}
             />
             {ucmChangeDate && deadlines[ucmChangeDate.format('YYYY-MM-DD')] && (
@@ -1073,7 +1075,7 @@ export default function RequirementRegister() {
               setCurrentPage(page);
               setPageSize(size);
             },
-            onShowSizeChange: (current, size) => {
+            onShowSizeChange: (_, size) => {
               setCurrentPage(1);
               setPageSize(size);
             },

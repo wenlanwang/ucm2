@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Modal, Form, Input, Select, Tag } from 'antd';
+import { Card, Table, Button, message, Modal, Form, Input, Select, Tag } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import api from '../../services/api';
-
-const { Option } = Select;
 
 interface ColumnOption {
   id: number;
@@ -17,7 +15,6 @@ export default function ColumnOptionsManage() {
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
   const [columns, setColumns] = useState<string[]>([]);
-  const [newColumnName, setNewColumnName] = useState('');
 
   useEffect(() => {
     loadData();
@@ -185,11 +182,7 @@ export default function ColumnOptionsManage() {
                   }
                 }
               }}
-            >
-              {columns.map(col => (
-                <Option key={col} value={col}>{col}</Option>
-              ))}
-            </Select>
+            />
           </Form.Item>
 
           <Form.Item

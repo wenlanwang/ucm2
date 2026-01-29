@@ -6,6 +6,7 @@ interface User {
   username: string;
   email: string;
   is_staff: boolean;
+  date_joined?: string;
 }
 
 interface AuthState {
@@ -19,7 +20,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       isAuthenticated: false,
 

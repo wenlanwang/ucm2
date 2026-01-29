@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, EditOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
-import { useAuthStore } from '../../store/useAuthStore';
 
 interface Requirement {
   id: number;
@@ -30,11 +29,7 @@ interface DateStatistics {
 
 export default function RequirementList() {
   dayjs.locale('zh-cn');
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const hasInitializedRef = useRef(false);
-  const initialSelectedDate = useRef<string | null>(null);
+  const [searchParams] = useSearchParams();
 
   const [data, setData] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,24 +58,10 @@ export default function RequirementList() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterKeyword, setFilterKeyword] = useState<string>('');
 
-  const { user } = useAuthStore();
-
   const requirementTypeText = {
     import: '导入',
     modify: '修改',
     delete: '删除'
-  };
-
-  const requirementTypeColors = {
-    import: 'blue',
-    modify: 'orange',
-    delete: 'red'
-  };
-
-  const requirementTypeIcons = {
-    import: <ImportOutlined />,
-    delete: <DeleteOutlined />,
-    modify: <EditOutlined />
   };
 
   // 列名样式配置
@@ -102,45 +83,7 @@ export default function RequirementList() {
     }
   };
 
-  // 类型按钮样式配置
-  const typeButtonStyles = {
-    import: {
-      unselected: {
-        backgroundColor: '#ffffff',
-        borderColor: '#91d5ff',
-        textColor: '#0050b3'
-      },
-      selected: {
-        backgroundColor: '#bae7ff',
-        borderColor: '#1890ff',
-        textColor: '#0050b3'
-      }
-    },
-    modify: {
-      unselected: {
-        backgroundColor: '#ffffff',
-        borderColor: '#ffd591',
-        textColor: '#d46b08'
-      },
-      selected: {
-        backgroundColor: '#ffe7ba',
-        borderColor: '#fa8c16',
-        textColor: '#d46b08'
-      }
-    },
-    delete: {
-      unselected: {
-        backgroundColor: '#ffffff',
-        borderColor: '#ffa39e',
-        textColor: '#cf1322'
-      },
-      selected: {
-        backgroundColor: '#ffccc7',
-        borderColor: '#f5222d',
-        textColor: '#cf1322'
-      }
-    }
-  };
+
 
   // 处理URL参数
   useEffect(() => {
@@ -170,6 +113,11 @@ export default function RequirementList() {
     // 设置登记类型
     if (typeParam && ['import', 'modify', 'delete'].includes(typeParam)) {
       setSelectedType(typeParam as 'import' | 'modify' | 'delete');
+    }
+
+    // 设置登记日期
+    if (dateParam) {
+      setSelectedDate(dateParam);
     }
 
     // 设置需求人筛选
@@ -213,41 +161,19 @@ export default function RequirementList() {
   const selectDefaultDateByRule = (dates: string[]): dayjs.Dayjs | null => {
     if (!dates || dates.length === 0) return null;
 
-    const now = dayjs();
+    const now = dayjs().startOf('day');
 
-    // 计算本周三和本周六
-    const currentDay = now.day(); // 0=周日, 1=周一, ..., 6=周六
-    const wednesdayOffset = (3 - currentDay + 7) % 7; // 到周三的天数
-    const saturdayOffset = (6 - currentDay + 7) % 7; // 到周六的天数
+    // 找到第一个大于等于当前日期的可用日期
+    const targetDate = dates.find(date => {
+      return dayjs(date).isAfter(now) || dayjs(date).isSame(now);
+    });
 
-    const wednesday = now.add(wednesdayOffset, 'day');
-    const saturday = now.add(saturdayOffset, 'day');
-    const nextWednesday = wednesday.add(7, 'day');
-
-    let targetDate: dayjs.Dayjs;
-
-    // 判断当前时间区间
-    // 周三 24:00 前（即周三 23:59:59 之前）
-    if (now.isBefore(wednesday.endOf('day'))) {
-      // 当前时间 < 周三 23:59，默认本周三
-      targetDate = wednesday;
-    } else if (now.isBefore(saturday.endOf('day'))) {
-      // 周三 23:59 <= 当前时间 < 周六 23:59，默认本周六
-      targetDate = saturday;
-    } else {
-      // 当前时间 >= 周六 23:59，默认下周三
-      targetDate = nextWednesday;
+    if (targetDate) {
+      return dayjs(targetDate);
     }
 
-    const targetDateStr = targetDate.format('YYYY-MM-DD');
-
-    // 检查目标日期是否在可用日期中
-    if (dates.includes(targetDateStr)) {
-      return targetDate;
-    }
-
-    // 如果目标日期不在可用日期中，返回 null
-    return null;
+    // 如果没有，选择第一个可用日期
+    return dayjs(dates[0]);
   };
 
   // 加载可用日期
@@ -349,21 +275,7 @@ export default function RequirementList() {
     }
   };
 
-  const handleNoteChange = async (id: number, value: string) => {
-    try {
-      await api.patch(`/requirements/${id}/`, { note: value });
-      message.success('备注已保存');
-
-      // 更新本地状态
-      setData(prevData =>
-        prevData.map(item =>
-          item.id === id ? { ...item, note: value } : item
-        )
-      );
-    } catch (error) {
-      message.error('保存失败');
-    }
-  };
+  
 
   const handleDelete = async (id: number) => {
     try {
@@ -614,9 +526,9 @@ export default function RequirementList() {
                     setSelectedDate(date.format('YYYY-MM-DD'));
                   }
                 }}
-                disabledDate={(current) => {
+                disabledDate={(date) => {
                   // 禁用不可选日期（非周三、非周六）
-                  if (!availableDates.includes(current.format('YYYY-MM-DD'))) {
+                  if (!availableDates.includes(date.format('YYYY-MM-DD'))) {
                     return true;
                   }
                   return false;
@@ -624,7 +536,6 @@ export default function RequirementList() {
                 placeholder="选择日期"
                 format="YYYY-MM-DD（ddd）"
                 placement="bottomLeft"
-                dropdownStyle={{ maxHeight: '400px', overflow: 'auto' }}
                 style={{ width: 210 }}
               />
             </div>
@@ -800,7 +711,7 @@ export default function RequirementList() {
               setCurrentPage(page);
               setPageSize(size);
             },
-            onShowSizeChange: (current, size) => {
+            onShowSizeChange: (_, size) => {
               setCurrentPage(1);
               setPageSize(size);
             },

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Avatar, Button, message } from 'antd';
-import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, TableOutlined, SettingOutlined, DatabaseOutlined, FileExcelOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, SettingOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/useAuthStore';
 
 const { Header, Sider, Content } = Layout;
@@ -26,7 +26,7 @@ export default function MainLayout() {
       onClick: () => navigate('/settings'),
     },
     {
-      type: 'divider',
+      type: 'divider' as const,
     },
     {
       key: 'logout',

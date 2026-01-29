@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Modal, Form, Input, Select, Popconfirm } from 'antd';
+import { Card, Table, Button, message, Space, Modal, Form, Input, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import api from '../../services/api';
-
-const { Option } = Select;
 
 interface ManufacturerInfo {
   id: number;

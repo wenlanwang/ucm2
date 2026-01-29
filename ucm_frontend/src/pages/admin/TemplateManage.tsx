@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Modal, Form, Input, Checkbox, Tag } from 'antd';
+import { Card, Button, message, Space, Modal, Form, Input, Checkbox, Tag } from 'antd';
 import { EditOutlined, DeleteOutlined, UpOutlined, DownOutlined, PlusOutlined } from '@ant-design/icons';
 import api from '../../services/api';
 
@@ -82,15 +82,17 @@ export default function TemplateManage() {
             }
           } catch (e) {
             // 如果是逗号分隔的字符串（旧格式）
-            const columns = processedItem.column_definitions
-              .split(',')
-              .map((col: string) => col.trim())
-              .filter((col: string) => col);
-            processedItem.column_definitions = columns.map((col: string) => ({
-              name: col,
-              required: false,
-              example: ''
-            }));
+            if (typeof processedItem.column_definitions === 'string') {
+              const columns = processedItem.column_definitions
+                .split(',')
+                .map((col: string) => col.trim())
+                .filter((col: string) => col);
+              processedItem.column_definitions = columns.map((col: string) => ({
+                name: col,
+                required: false,
+                example: ''
+              }));
+            }
           }
         }
         
