@@ -1003,7 +1003,6 @@ export default function RequirementList() {
             <div style={{ marginLeft: 'auto' }}>
               <Space>
                 <Button
-                  type="primary"
                   icon={<ExportOutlined />}
                   onClick={handleExport}
                   disabled={data.length === 0}
@@ -1011,6 +1010,7 @@ export default function RequirementList() {
                   导出需求
                 </Button>
                 <Button
+                  type="primary"
                   icon={<ExportOutlined />}
                   onClick={handleExportChangePlan}
                   disabled={!selectedDate}

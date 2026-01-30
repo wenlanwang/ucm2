@@ -1191,15 +1191,16 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
 
                 # 根据类型生成文件
                 if req_type == 'delete':
-                    # 删除类型的回退方案：使用导入模板的列结构，数据按导入规则映射
+                    # 删除类型的回退方案：使用导入模板的列结构，表头用导入主题色
                     file_data = self._generate_import_change_plan(data, is_rollback=True)
                     template_type = 'import'
                 elif req_type == 'modify':
                     file_data = self._generate_modify_rollback_plan(data)
                     template_type = 'modify'
                 else:  # import
-                    file_data = self._generate_import_change_plan(data, is_rollback=True)
-                    template_type = 'import'
+                    # 导入类型的回退方案：使用删除模板的列结构，表头用删除主题色
+                    file_data = self._generate_delete_rollback_plan(data)
+                    template_type = 'delete'
 
                 type_name = {'import': '导入', 'modify': '修改', 'delete': '删除'}[req_type]
                 filename = f'UCM_{type_name}_{location}_回退.xls'
@@ -1234,11 +1235,11 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         headers = [col['name'] for col in columns]
         ws.append(headers)
 
-        # 设置表头样式（通过列索引访问）
+        # 设置表头样式（通过列索引访问）- 使用删除主题色（红色系）
         for col_idx, col in enumerate(columns, 1):
             cell = ws.cell(row=1, column=col_idx)
-            cell.font = Font(bold=True, color="0050B3")
-            cell.fill = PatternFill(start_color="E6F7FF", end_color="E6F7FF", fill_type="solid")
+            cell.font = Font(bold=True, color="CF1322")
+            cell.fill = PatternFill(start_color="FFF1F0", end_color="FFF1F0", fill_type="solid")
             cell.alignment = Alignment(horizontal='center', vertical='center')
             cell.border = Border(
                 left=Side(style='thin'),
@@ -1412,6 +1413,70 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 # 变更方案：列名与需求列表一一对应
                 row_values = [row_data.get(col['name'], '') for col in columns]
                 ws.append(row_values)
+
+        # 保存到BytesIO
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def _generate_delete_rollback_plan(self, data):
+        """生成删除类型的回退方案（使用删除模板，表头使用删除主题色）"""
+        try:
+            # 获取删除模板
+            template = TemplateConfig.objects.get(template_type='delete')
+            columns = template.get_column_definitions()
+        except TemplateConfig.DoesNotExist:
+            columns = []
+
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "回退方案"
+
+        # 删除模板的列名映射
+        column_mapping = {
+            '设备IP': 'IP',
+            '需求': '删除',
+            '老指标': '名称',
+            '新指标': ''
+        }
+
+        # 添加表头
+        headers = [col['name'] for col in columns]
+        ws.append(headers)
+
+        # 设置表头样式（使用删除主题色 - 红色系）
+        for col_idx, col in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = Font(bold=True, color="CF1322")
+            cell.fill = PatternFill(start_color="FFF1F0", end_color="FFF1F0", fill_type="solid")
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+        # 添加数据行
+        for row_data in data:
+            row_values = []
+            for col in columns:
+                col_name = col['name']
+                if col_name in column_mapping:
+                    # 使用映射规则
+                    if col_name == '需求':
+                        row_values.append('删除')
+                    elif col_name == '新指标':
+                        row_values.append('')
+                    else:
+                        mapped_name = column_mapping[col_name]
+                        row_values.append(row_data.get(mapped_name, ''))
+                else:
+                    # 直接使用原始数据
+                    row_values.append(row_data.get(col_name, ''))
+            ws.append(row_values)
 
         # 保存到BytesIO
         buffer = io.BytesIO()
