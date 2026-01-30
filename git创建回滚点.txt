@@ -93,3 +93,16 @@ cd D:\dev\ucm2
 git checkout master
 git fetch origin
 git reset --hard ea2e697bfbafd258c4e9ef56dcc86e7c8acf81ea
+
+
+===================================
+恢复到commit点
+===================================
+# 1. 克隆到新文件夹（保留所有历史）
+git clone D:\dev\ucm2 D:\backup\ucm2-20260130
+
+# 2. 进入新文件夹，检出特定 commit
+cd D:\backup\ucm2-20260130
+git checkout a1b2c3d    # 指定 commit ID
+# 或
+git checkout HEAD~2     # 回退 2 个 commit

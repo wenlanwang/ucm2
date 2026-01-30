@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag } from 'antd';
+import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag, Popconfirm } from 'antd';
 import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
@@ -396,22 +396,8 @@ export default function RequirementRegister() {
   }, [templateColumns, columnOptions]);
   
   const handleDeleteRow = useCallback((id: number) => {
-    const row = tableData.find(r => r.id === id);
-    Modal.confirm({
-      title: '确认删除',
-      icon: <ExclamationCircleOutlined />,
-      content: (
-        <div>
-          <p>确定要删除第 {tableData.findIndex(r => r.id === id) + 1} 行数据吗？</p>
-          {row && row.data['名称'] && <p>名称：{row.data['名称']}</p>}
-          {row && row.data['IP'] && <p>IP：{row.data['IP']}</p>}
-        </div>
-      ),
-      onOk: () => {
-        setTableData(tableData.filter(r => r.id !== id));
-        message.success('删除成功');
-      }
-    });
+    setTableData(tableData.filter(r => r.id !== id));
+    message.success('删除成功');
   }, [tableData]);
   
   const handleCopyRow = useCallback((id: number) => {
@@ -1001,12 +987,18 @@ export default function RequirementRegister() {
               icon={<CopyOutlined />}
               onClick={() => handleCopyRow(row.id)}
             />
-            <Button
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => handleDeleteRow(row.id)}
-            />
+            <Popconfirm
+              title="确认删除?"
+              onConfirm={() => handleDeleteRow(row.id)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+              />
+            </Popconfirm>
           </Space>
         ),
       },
