@@ -1794,3 +1794,157 @@ def deadline_config(request):
             })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========== SSO 单点登录视图 ==========
+
+from django.shortcuts import redirect
+from django.contrib.auth.models import User
+from ucm_app.sso import get_auth_backend, get_sso_config
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def sso_login(request):
+    """
+    SSO 登录入口
+    重定向到 SSO 登录页面
+    """
+    auth = get_auth_backend()
+    callback_url = f"{request.scheme}://{request.get_host()}/api/auth/sso/verify_session"
+    login_url = auth.get_login_url(callback_url)
+    logger.info(f"SSO 登录重定向: {login_url}")
+    return redirect(login_url)
+
+
+def sso_verify_session(request):
+    """
+    SSO 回调接口
+    SSO 登录成功后会回调此接口，携带 session_id
+    """
+    session_id = request.GET.get('session_id')
+    
+    if not session_id:
+        logger.error("SSO 回调缺少 session_id 参数")
+        return redirect('/login?error=missing_session_id')
+    
+    logger.info(f"SSO 回调验证 session_id: {session_id}")
+    
+    # 验证 session_id
+    auth = get_auth_backend()
+    user_info = auth.verify_session(session_id)
+    
+    if not user_info:
+        logger.error(f"SSO session_id 验证失败: {session_id}")
+        return redirect('/login?error=invalid_session')
+    
+    # 同步用户到 Django User 表
+    user = sync_user_from_sso(user_info)
+    
+    # 创建 Django Session（登录）
+    from django.contrib.auth import login
+    login(request, user)
+    
+    # 存储 SSO session_id 用于后续登出
+    request.session['sso_session_id'] = session_id
+    
+    logger.info(f"SSO 登录成功: userid={user_info.userid}, username={user_info.username}")
+    
+    # 重定向到前端首页
+    from django.conf import settings
+    frontend_url = getattr(settings, 'APP_BASE_URL', 'http://localhost:5173')
+    return redirect(frontend_url)
+
+
+def sync_user_from_sso(user_info):
+    """
+    从 SSO 用户信息同步到 Django User
+    
+    Args:
+        user_info: SSO 用户信息 (UserInfo 对象)
+        
+    Returns:
+        Django User 对象
+    """
+    userid = user_info.userid
+    username = user_info.username
+    is_admin = user_info.is_admin
+    
+    # 查找或创建用户
+    user, created = User.objects.get_or_create(
+        username=userid,
+        defaults={
+            'first_name': username,
+            'is_staff': is_admin,
+            'is_superuser': is_admin,
+        }
+    )
+    
+    # 更新用户信息
+    user.first_name = username
+    user.is_staff = is_admin
+    user.is_superuser = is_admin
+    user.save()
+    
+    logger.info(f"用户同步: userid={userid}, username={username}, is_admin={is_admin}, created={created}")
+    
+    return user
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def sso_logout(request):
+    """
+    SSO 登出
+    同时登出本地 Session 和 SSO Session
+    """
+    # 获取 SSO session_id
+    sso_session_id = request.session.get('sso_session_id')
+    
+    # 登出 SSO
+    if sso_session_id:
+        auth = get_auth_backend()
+        auth.logout(sso_session_id)
+        logger.info(f"SSO 登出: session_id={sso_session_id}")
+    
+    # 登出本地
+    logout(request)
+    
+    return Response({'success': True, 'message': '登出成功'})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def sso_status(request):
+    """
+    获取 SSO 认证配置状态
+    用于前端判断当前是 Mock 模式还是生产模式
+    """
+    config = get_sso_config()
+    return Response(config)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def tool_portal_config(request):
+    """
+    获取工具集门户配置
+    用于前端返回按钮
+    """
+    from django.conf import settings
+    portal_url = getattr(settings, 'TOOL_PORTAL_URL', 'http://localhost:3000')
+    
+    # 如果用户已登录且有 SSO session_id，构建带 session 的跳转 URL
+    sso_session_id = request.session.get('sso_session_id')
+    if sso_session_id and request.user.is_authenticated:
+        # 工具集的 SSO 验证回调地址（create 项目的接口路径）
+        redirect_url = f"{portal_url}/api/auth/verify_session?session_id={sso_session_id}"
+    else:
+        redirect_url = portal_url
+    
+    return Response({
+        'portal_url': portal_url,
+        'redirect_url': redirect_url,
+        'has_sso_session': bool(sso_session_id)
+    })

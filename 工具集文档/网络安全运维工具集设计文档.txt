@@ -1,0 +1,299 @@
+网络安全运维工具集 - 系统设计文档
+
+1. 项目概述
+
+目标：构建一个可扩展的网络安全运维工具集成平台，支持多种运维工具的统一管理和运行。当前已实现"变更方案生成"工具，后续将扩展UCM需求、防火墙策略报告等十几个工具。
+
+范围：提供统一的工具管理框架、用户界面和API接口，各工具独立运行、互不干扰，共享数据存储和配置管理。
+
+用户：网络安全运维人员、系统管理员。
+
+2. 系统架构
+
+2.1 整体架构
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                        前端 (Vue 3 + Element Plus)                    │
+├─────────────────────────────────────────────────────────────────────┤
+│  工具导航  │  变更方案生成  │  UCM需求  │  防火墙报告  │  工具N...    │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        API 网关层 (FastAPI)                          │
+├─────────────────────────────────────────────────────────────────────┤
+│  /api/tools/         │  /api/common/        │  /api/system/         │
+│  ├─ change-generator │  ├─ auth             │  ├─ config            │
+│  ├─ ucm-request      │  ├─ files            │  ├─ scheduler         │
+│  ├─ firewall-report  │  └─ notifications     │  └─ logs             │
+│  └─ tool-n           │                       │                       │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        模块层 (Modules)                              │
+├─────────────────────────────────────────────────────────────────────┤
+│  change_generator/   │  ucm_request/        │  firewall_report/     │
+│  ├─ models.py        │  ├─ models.py        │  ├─ models.py         │
+│  ├─ schemas.py       │  ├─ schemas.py        │  ├─ schemas.py         │
+│  ├─ api.py           │  ├─ api.py           │  ├─ api.py            │
+│  ├─ services/        │  ├─ services/        │  ├─ services/         │
+│  └─ external/        │  └─ external/        │  └─ external/         │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        共享层 (Shared)                               │
+├─────────────────────────────────────────────────────────────────────┤
+│  models.py (公共模型)  │  utils.py (工具函数)  │  constants.py (常量) │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        数据层                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│              ops_tools.db  │  files/  │  logs/                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+2.2 目录结构
+
+D:\dev\create\
+├── main.py                      # 主入口（加载所有工具模块）
+├── core/                        # 核心框架
+│   ├── config.py               # 全局配置
+│   ├── database.py             # 数据库连接
+│   ├── base_tool.py            # 工具基类（定义标准接口）
+│   └── tool_registry.py        # 工具注册中心
+│
+├── api/                        # API路由层
+│   ├── system.py               # 系统管理API
+│   └── tools/                  # 各工具API（按模块组织）
+│       └── change_generator.py
+│
+├── modules/                    # 工具模块（每个工具一个目录）
+│   └── change_generator/       # 变更方案生成模块
+│       ├── __init__.py         # 工具入口类
+│       ├── models.py           # 模块私有数据模型
+│       ├── schemas.py          # Pydantic模型
+│       ├── api.py              # API路由
+│       ├── services/           # 业务逻辑
+│       │   ├── task_executor.py
+│       │   ├── task_manager.py
+│       │   └── ...
+│       └── external/           # 外部接口
+│           ├── base.py
+│           ├── mock_impl.py
+│           └── real_impl.py
+│
+├── shared/                     # 共享组件
+│   ├── models.py               # 公共数据模型（工具注册表等）
+│   └── utils.py                # 工具函数
+│
+├── services/                   # 共享服务
+│   ├── scheduler.py            # 定时调度
+│   └── concurrent_pool.py      # 并发池
+│
+├── frontend/                   # 前端
+│   └── src/
+│       ├── main.js
+│       ├── App.vue
+│       ├── router/             # 路由配置
+│       ├── components/         # 公共组件
+│       │   ├── Layout.vue
+│       │   ├── Sidebar.vue
+│       │   └── Header.vue
+│       └── views/              # 各工具页面
+│           └── change_generator/
+│               └── Index.vue
+│
+└── files/                      # 文件存储
+
+3. 工具开发规范
+
+3.1 工具基类 (BaseTool)
+
+所有工具必须继承 BaseTool 基类：
+
+class BaseTool(ABC):
+    # 工具元信息
+    tool_id: str = ""           # 工具唯一标识
+    tool_name: str = ""         # 工具名称
+    tool_description: str = ""  # 工具描述
+    tool_icon: str = ""         # 图标
+    tool_version: str = "1.0.0" # 版本
+    
+    @abstractmethod
+    def get_router(self):
+        """返回FastAPI路由"""
+        pass
+    
+    @abstractmethod
+    def get_models(self) -> List:
+        """返回数据模型类列表，用于建表"""
+        pass
+
+3.2 添加新工具步骤
+
+1. 创建 modules/new_tool/ 目录
+2. 创建 __init__.py 定义工具类（继承 BaseTool）
+3. 创建 models.py, schemas.py, api.py, services/
+4. 在 main.py 中导入工具类
+5. 前端添加对应路由和页面
+
+4. 已实现工具
+
+4.1 变更方案生成器 (change-generator)
+
+功能：自动化完成从变更清单获取到方案上传SD系统的全流程。
+
+外部接口：
+- 接口1: 获取待处理的变更清单
+- 接口2: 下载附件
+- 接口3: 触发生成方案（同步长任务）
+- 接口4: 查询方案日志
+- 接口5: 查询SD日志
+- 接口6: 标记已上传
+- 接口7: 查询online日志
+- 接口8-10: NAT相关接口
+
+任务状态：
+- pending: 待处理
+- running: 生成中
+- completed: 已完成
+- error: 异常
+
+执行步骤（普通任务）：
+1. 下载附件
+2. 生成方案
+3. 验证上传
+4. 标记完成
+
+执行步骤（NAT任务）：
+1. 下载附件
+2. 下载NAT
+3. NAT转换
+4. 生成方案
+5. 验证上传
+6. 标记完成
+
+5. 预留工具位置
+
+| 工具ID | 工具名称 | 状态 |
+|--------|----------|------|
+| change-generator | 变更方案生成 | ✅ 已实现 |
+| ucm-request | UCM需求 | 📝 预留 |
+| firewall-report | 防火墙策略报告 | 📝 预留 |
+| security-scan | 安全扫描 | 📝 预留 |
+| vuln-manage | 漏洞管理 | 📝 预留 |
+| asset-manage | 资产管理 | 📝 预留 |
+
+6. 数据模型
+
+6.1 工具注册表 (tool_registry)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| tool_id | VARCHAR(50) | 工具唯一标识（主键）|
+| tool_name | VARCHAR(100) | 工具名称 |
+| tool_description | VARCHAR(500) | 工具描述 |
+| tool_icon | VARCHAR(50) | 图标 |
+| tool_version | VARCHAR(20) | 版本 |
+| is_enabled | BOOLEAN | 是否启用 |
+| config | TEXT | JSON配置 |
+| installed_at | DATETIME | 安装时间 |
+| last_used_at | DATETIME | 最后使用时间 |
+
+6.2 变更方案生成 - 任务表 (tasks)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键 |
+| change_id | VARCHAR(50) | 变更单号，唯一 |
+| change_name | VARCHAR(200) | 变更名称 |
+| owner | VARCHAR(50) | 牵头人 |
+| status | VARCHAR(20) | 状态 |
+| current_step | VARCHAR(50) | 当前执行步骤 |
+| step_status | JSON | 各步骤状态详情 |
+| error_message | TEXT | 错误信息 |
+| nat_status | VARCHAR(20) | NAT状态 |
+| created_at | TIMESTAMP | 创建时间 |
+| started_at | TIMESTAMP | 开始时间 |
+| finished_at | TIMESTAMP | 完成时间 |
+| duration_seconds | INTEGER | 执行耗时(秒) |
+
+7. API接口设计
+
+7.1 工具管理API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/tools | 获取所有已注册工具列表 |
+
+7.2 变更方案生成API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/tools/change-generator/tasks | 获取任务列表 |
+| POST | /api/tools/change-generator/tasks/sync | 同步清单 |
+| POST | /api/tools/change-generator/tasks/{id}/start | 开始任务 |
+| POST | /api/tools/change-generator/tasks/{id}/stop | 停止任务 |
+| POST | /api/tools/change-generator/tasks/{id}/retry | 重试任务 |
+| GET | /api/tools/change-generator/tasks/{id} | 获取任务详情 |
+| POST | /api/tools/change-generator/tasks/batch/start | 批量开始 |
+
+7.3 系统管理API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/config | 获取系统配置 |
+| PUT | /api/config | 更新系统配置 |
+| GET | /api/scheduler/jobs | 获取定时任务列表 |
+
+8. 技术选型
+
+| 组件 | 技术方案 | 说明 |
+|------|----------|------|
+| 后端框架 | FastAPI | 高性能异步框架 |
+| 任务调度 | APScheduler | 轻量级定时任务 |
+| 并发控制 | ThreadPoolExecutor | 本地线程池 |
+| 数据库 | SQLite | 轻量级，单文件部署 |
+| 前端框架 | Vue 3 | 现代化前端框架 |
+| UI组件库 | Element Plus | 企业级UI组件 |
+| 路由 | Vue Router 4 | 前端路由管理 |
+| 构建工具 | Vite | 快速构建工具 |
+
+9. 并发控制
+
+采用 ThreadPoolExecutor 进行本地并发控制：
+- 默认并发数为5，可通过配置调整（1-20）
+- 超过并发限制的任务进入等待队列
+- 支持动态调整并发数，实时生效
+
+10. 定时任务
+
+| 任务 | 默认周期 | 说明 |
+|------|----------|------|
+| 同步清单 | 10分钟 | 调用接口1获取最新变更清单 |
+| 状态检查 | 1分钟 | 检查运行中任务的执行状态 |
+| NAT状态检查 | 1分钟 | 检查NAT任务的就绪状态 |
+| 文件清理 | 每天 | 清理过期的临时文件 |
+
+11. 部署说明
+
+1. 安装依赖
+   pip install -r requirements.txt
+   cd frontend && npm install
+
+2. 启动后端
+   python main.py
+
+3. 启动前端开发服务器
+   cd frontend && npm run dev
+
+4. 生产环境构建
+   cd frontend && npm run build
+
+5. 访问地址
+   - 前端: http://localhost:3000
+   - 后端API: http://localhost:8000
+   - API文档: http://localhost:8000/docs

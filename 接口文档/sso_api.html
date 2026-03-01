@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSO 登录后端调用流程文档</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .container {
+            background-color: #fff;
+            padding: 40px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            text-align: center;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 5px solid #2980b9;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #16a085;
+            margin-top: 20px;
+        }
+        .api-block {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .method {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9em;
+            color: #fff;
+        }
+        .get { background-color: #61affe; }
+        .post { background-color: #49cc90; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, "Andale Mono", monospace;
+            color: #c7254e;
+        }
+        pre {
+            background-color: #2d2d2d;
+            color: #ccc;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .mermaid {
+            text-align: center;
+            margin: 30px 0;
+        }
+        @media print {
+            body { background-color: #fff; margin: 0; }
+            .container { box-shadow: none; padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SSO 登录后端调用流程文档</h1>
+
+        <h2>一、SSO API 接口 (SSO 服务端提供)</h2>
+        <p>这部分接口由 SSO 服务器提供，供应用方调用。</p>
+
+        <div class="api-block">
+            <h3>1. SSO 登录入口 (Web 重定向)</h3>
+            <p><strong>描述:</strong> 用户发起登录请求，重定向至 SSO 登录页面。</p>
+            <p><strong>URL:</strong> <code>https://sso.netm.icbc/login?next=</code></p>
+            <p><strong>请求方式:</strong> <span class="method get">GET</span></p>
+            <p><strong>请求参数:</strong></p>
+            <pre>{
+    "next": "http://nebula.icbc"  // 登录成功后要跳转的应用主页地址
+}</pre>
+            <p><strong>响应:</strong> <code>index.html</code> 静态登录页面</p>
+        </div>
+
+        <div class="api-block">
+            <h3>2. 获取 SSO 验证码</h3>
+            <p><strong>描述:</strong> 在进行密码登录前获取验证码。</p>
+            <p><strong>URL:</strong> <code>https://sso.netm.icbc/verificationcode</code></p>
+            <p><strong>请求方式:</strong> <span class="method post">POST</span></p>
+            <p><strong>请求参数:</strong></p>
+            <pre>{
+    "userid": "统一认证号"
+}</pre>
+            <p><strong>响应:</strong></p>
+            <pre>{
+    "success": true,          // True 成功，False 失败
+    "message": "",
+    "verifyRequestNo": "1232131", // 验证码序列号
+    "src": "二进制序列"        // 验证码图片的二进制序列
+}</pre>
+        </div>
+
+        <div class="api-block">
+            <h3>3. 用户密码登录</h3>
+            <p><strong>描述:</strong> 提交账号密码及验证码进行登录。</p>
+            <p><strong>URL:</strong> <code>https://sso.netm.icbc/login/new</code></p>
+            <p><strong>请求方式:</strong> <span class="method post">POST</span></p>
+            <p><strong>请求参数:</strong></p>
+            <pre>{
+    "userid": "统一认证号",
+    "password": "密码",
+    "verifyRequestNo": "验证码序列号", // 获取验证码时返回的序列号
+    "verificationcode": "验证码",
+    "next": "待跳转地址"
+}</pre>
+            <p><strong>响应:</strong></p>
+            <pre>{
+    "success": true, // True 成功，False 失败
+    "message": "验证成功"
+}</pre>
+        </div>
+
+        <div class="api-block">
+            <h3>4. 验证 Session ID (应用查 SSO)</h3>
+            <p><strong>描述:</strong> 应用方调用此接口验证 SSO 返回的 session_id 是否有效，并获取用户信息。</p>
+            <p><strong>URL:</strong> <code>https://sso.netm.icbc/check_session?session_id=</code></p>
+            <p><strong>请求方式:</strong> <span class="method get">GET</span></p>
+            <p><strong>请求参数:</strong></p>
+            <pre>{
+    "session_id": "1234567890" // 登录成功 SSO 返回的 session_id
+}</pre>
+            <p><strong>响应:</strong></p>
+            <pre>{
+    "status": "valid",      // 出现 valid 表示验证成功
+    "username": "用户名",
+    "userid": "用户统一验证号",
+    "rolelist": []
+}</pre>
+        </div>
+
+        <div class="api-block">
+            <h3>5. SSO 退出登录</h3>
+            <p><strong>URL:</strong> <code>https://sso.netm.icbc/logout?session_id=</code></p>
+            <p><strong>请求方式:</strong> <span class="method get">GET</span></p>
+            <p><strong>请求参数:</strong></p>
+            <pre>{
+    "session_id": "1234567890"
+}</pre>
+            <p><strong>响应:</strong> <code>index.html</code> 静态登录页面</p>
+        </div>
+
+        <h2>二、应用方回调接口 (应用服务端提供)</h2>
+        <div class="api-block">
+            <h3>1. 验证 Session ID (SSO 回调应用)</h3>
+            <p><strong>描述:</strong> SSO 登录成功后，携带 session_id 回调此接口。</p>
+            <p><strong>URL:</strong> <code>https://xxxxx/verify_session?session_id=&next=</code></p>
+            <p><strong>请求方式:</strong> <span class="method get">GET</span></p>
+        </div>
+
+        <h2>三、调用流程示例 (时序图)</h2>
+        <div class="mermaid">
+sequenceDiagram
+    participant User as 用户前端
+    participant App as 应用 (服务端)
+    participant SSO as SSO 服务器
+
+    User->>App: 1. 登录请求
+    App-->>User: 2. 重定向到 SSO 登录页面
+    User->>SSO: 3. 用户登录 (输入账号密码)
+    SSO->>App: 4. 回调 verify_session 接口
+    App->>SSO: 5. 调用 验证 session_id 接口
+    SSO-->>App: 返回用户信息 (status: valid)
+    App->>App: 6. 存储 session_id 及用户信息
+    App-->>User: 7. 重定向应用主页
+        </div>
+        
+        <p><strong>流程文字详解：</strong></p>
+        <ol>
+            <li><strong>登录:</strong> 用户在“用户前端”点击登录。</li>
+            <li><strong>重定向:</strong> “应用”将请求重定向到“SSO 登录页面”。</li>
+            <li><strong>用户登录:</strong> 用户在 SSO 页面输入账号密码进行“用户登录”。</li>
+            <li><strong>SSO 回调:</strong> 登录成功后，“SSO”回调“应用”的 verify_session 接口。</li>
+            <li><strong>验证 Session:</strong> “应用”调用“SSO”的 验证 session_id 接口 (check_session) 以确认身份。</li>
+            <li><strong>返回信息:</strong> “SSO”返回用户详细信息给“应用”。</li>
+            <li><strong>存储:</strong> “应用”本地存储 session_id 及用户信息。</li>
+            <li><strong>完成:</strong> “应用”将“用户前端”重定向回应用主页，完成登录流程。</li>
+        </ol>
+    </div>
+    <script>
+        mermaid.initialize({ startOnLoad: true });
+    </script>
+</body>
+</html>

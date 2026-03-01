@@ -17,4 +17,11 @@ urlpatterns = [
     path('auth/current-user/', views.get_current_user, name='get_current_user'),
     path('ucm-date-config/', views.get_ucm_date_config, name='get_ucm_date_config'),
     path('deadline_config/', views.deadline_config, name='deadline_config'),
+    
+    # SSO 单点登录路由
+    path('auth/sso/login/', views.sso_login, name='sso_login'),
+    path('auth/sso/verify_session/', views.sso_verify_session, name='sso_verify_session'),
+    path('auth/sso/logout/', views.sso_logout, name='sso_logout'),
+    path('auth/sso/status/', views.sso_status, name='sso_status'),
+    path('tool-portal-config/', views.tool_portal_config, name='tool_portal_config'),
 ]

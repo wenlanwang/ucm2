@@ -1,16 +1,37 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, message, Typography } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Card, Form, Input, Button, message, Typography, Divider, Alert } from 'antd';
+import { UserOutlined, LockOutlined, LoginOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/useAuthStore';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
-  const { login } = useAuthStore();
+  const { login, ssoLogin, ssoStatus, fetchSSOStatus } = useAuthStore();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  // 获取 URL 中的错误信息
+  const errorMsg = searchParams.get('error');
 
+  // 组件加载时获取 SSO 状态
+  useEffect(() => {
+    fetchSSOStatus();
+  }, [fetchSSOStatus]);
+
+  // 显示错误提示
+  useEffect(() => {
+    if (errorMsg) {
+      if (errorMsg === 'missing_session_id') {
+        message.error('SSO 登录回调缺少必要参数');
+      } else if (errorMsg === 'invalid_session') {
+        message.error('SSO 会话验证失败，请重新登录');
+      }
+    }
+  }, [errorMsg]);
+
+  // 本地登录处理
   const onFinish = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
@@ -28,6 +49,11 @@ export default function Login() {
     }
   };
 
+  // SSO 登录处理
+  const handleSSOLogin = () => {
+    ssoLogin();
+  };
+
   return (
     <div style={{
       height: '100vh',
@@ -42,6 +68,37 @@ export default function Login() {
           <p style={{ color: '#666' }}>请登录您的账户</p>
         </div>
         
+        {/* 错误提示 */}
+        {errorMsg && (
+          <Alert 
+            type="error" 
+            message="登录失败" 
+            description={
+              errorMsg === 'missing_session_id' 
+                ? 'SSO 登录回调缺少必要参数' 
+                : 'SSO 会话验证失败，请重新登录'
+            }
+            style={{ marginBottom: 16 }}
+            closable
+          />
+        )}
+
+        {/* SSO 登录按钮 */}
+        <Button 
+          type="primary" 
+          size="large"
+          icon={<LoginOutlined />}
+          onClick={handleSSOLogin}
+          style={{ width: '100%', marginBottom: 16 }}
+        >
+          {ssoStatus?.use_mock ? 'Mock SSO 登录' : '统一认证登录'}
+        </Button>
+
+        <Divider style={{ margin: '16px 0' }}>
+          <Text type="secondary">或使用本地账户</Text>
+        </Divider>
+        
+        {/* 本地登录表单 */}
         <Form
           name="login"
           onFinish={onFinish}
@@ -71,22 +128,34 @@ export default function Login() {
 
           <Form.Item>
             <Button 
-              type="primary" 
+              type="default" 
               htmlType="submit" 
               loading={loading}
               size="large"
               style={{ width: '100%' }}
             >
-              登录
+              本地登录
             </Button>
           </Form.Item>
         </Form>
         
-        <div style={{ textAlign: 'center', marginTop: 16, color: '#999' }}>
-          <p>测试账户：</p>
-          <p>管理员：admin / admin123</p>
-          <p>普通用户：user1 / user123</p>
-        </div>
+        {/* Mock 模式提示 */}
+        {ssoStatus?.use_mock && (
+          <div style={{ textAlign: 'center', marginTop: 16, padding: 12, background: '#fff7e6', borderRadius: 4 }}>
+            <Text type="warning">测试环境 (Mock SSO)</Text>
+            <br />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              测试账号：000735977 / 123456
+            </Text>
+          </div>
+        )}
+        
+        {/* 生产模式提示 */}
+        {!ssoStatus?.use_mock && ssoStatus && (
+          <div style={{ textAlign: 'center', marginTop: 16, color: '#999' }}>
+            <Text type="secondary">使用统一认证号登录</Text>
+          </div>
+        )}
       </Card>
     </div>
   );

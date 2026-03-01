@@ -1,21 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Avatar, Button, message } from 'antd';
-import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, SettingOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, SettingOutlined, ClockCircleOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/useAuthStore';
+import { getToolPortalConfig } from '../services/api';
 
 const { Header, Sider, Content } = Layout;
 
 export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [redirectUrl, setRedirectUrl] = useState('http://localhost:3000');
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // 获取工具集门户跳转 URL（带 SSO session_id）
+  useEffect(() => {
+    const fetchPortalConfig = async () => {
+      try {
+        const config = await getToolPortalConfig();
+        setRedirectUrl(config.redirect_url);
+      } catch (error) {
+        console.error('获取工具集门户配置失败:', error);
+      }
+    };
+    fetchPortalConfig();
+  }, []);
 
   const handleLogout = async () => {
     await logout();
     message.success('已退出登录');
     navigate('/login');
+  };
+
+  const handleBackToPortal = () => {
+    window.location.href = redirectUrl;
   };
 
   const userMenuItems = [
@@ -130,13 +149,24 @@ export default function MainLayout() {
       
       <Layout style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 4px rgba(0,21,41,.08)', flex: '0 0 auto' }}>
-          <Button
-            type="text"
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: '16px' }}
-          >
-            {collapsed ? '☰' : '☰'}
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <Button
+              type="text"
+              onClick={() => setCollapsed(!collapsed)}
+              style={{ fontSize: '16px' }}
+            >
+              {collapsed ? '☰' : '☰'}
+            </Button>
+            
+            <Button
+              type="link"
+              icon={<ArrowLeftOutlined />}
+              onClick={handleBackToPortal}
+              style={{ color: '#666' }}
+            >
+              返回工具集
+            </Button>
+          </div>
           
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>

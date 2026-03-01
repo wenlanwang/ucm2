@@ -175,3 +175,34 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# ========== SSO 单点登录配置 ==========
+
+# SSO 模式切换：True=Mock模式(测试环境), False=生产模式
+SSO_USE_MOCK = True
+
+# SSO 服务器地址
+SSO_BASE_URL = 'https://sso.netm.icbc'  # 生产环境 SSO 地址
+
+# Mock SSO 地址（指向 create 项目的 mock-sso 服务）
+SSO_MOCK_URL = 'http://localhost:8000/mock-sso'
+
+# 应用前端地址（用于 SSO 回调）
+APP_BASE_URL = 'http://127.0.0.1:5173'
+
+# 工具集门户地址（用于返回按钮）
+TOOL_PORTAL_URL = 'http://localhost:3000'
+
+# Session 配置
+SESSION_EXPIRE_HOURS = 24  # Session 过期时间（小时）
+
+# 管理员用户 ID 列表（统一认证号）
+ADMIN_USERS = ['000735977']
+
+# Mock 测试用户（仅在 Mock 模式使用，用于参考）
+SSO_MOCK_TEST_USERS = {
+    '000735977': {'userid': '000735977', 'username': '管理员', 'password': '123456', 'rolelist': ['admin']},
+    '000735978': {'userid': '000735978', 'username': '操作员', 'password': '123456', 'rolelist': ['operator']},
+    '000735979': {'userid': '000735979', 'username': '访客', 'password': '123456', 'rolelist': ['viewer']},
+}
