@@ -77,15 +77,16 @@ const openTool = (tool) => {
 const openUCM = () => {
   const ssoSessionId = localStorage.getItem('sso_session_id');
   
-  // UCM后端验证接口地址
+  // UCM后端验证接口地址（注意：必须跳转到后端，不是前端）
   // 测试环境
-  const ucmVerifyUrl = 'http://localhost:8000/api/auth/sso/verify_session';
+  const ucmBackendUrl = 'http://localhost:8001';
   // 生产环境（根据实际部署地址修改）
-  // const ucmVerifyUrl = 'https://ucm.example.com/api/auth/sso/verify_session';
+  // const ucmBackendUrl = 'https://ucm.example.com';
   
   if (ssoSessionId) {
-    // 已登录，携带session_id跳转
-    window.location.href = `${ucmVerifyUrl}?session_id=${ssoSessionId}`;
+    // 已登录，携带session_id跳转到UCM后端验证接口
+    // 后端验证成功后会自动重定向到UCM前端首页
+    window.location.href = `${ucmBackendUrl}/api/auth/sso/verify_session?session_id=${ssoSessionId}`;
   } else {
     // 未登录，跳转UCM前端（会触发登录流程）
     window.location.href = 'http://127.0.0.1:5173/';
@@ -141,7 +142,7 @@ export const TOOL_CONFIG = {
     // 测试环境
     development: {
       frontend: 'http://127.0.0.1:5173',
-      backend: 'http://localhost:8000'
+      backend: 'http://localhost:8001'  // 后端验证接口地址
     },
     // 生产环境
     production: {
@@ -155,16 +156,32 @@ export const TOOL_CONFIG = {
 const env = import.meta.env.MODE; // 'development' 或 'production'
 const ucmConfig = TOOL_CONFIG.ucm[env];
 
-// 跳转UCM
+// 跳转UCM（必须跳转到后端验证接口）
 const verifyUrl = `${ucmConfig.backend}/api/auth/sso/verify_session?session_id=${sessionId}`;
 ```
 
 ## 跳转URL说明
 
-| 场景 | URL格式 |
-|------|---------|
-| 已登录跳转 | `{UCM后端}/api/auth/sso/verify_session?session_id={session_id}` |
-| 未登录跳转 | `{UCM前端}/` |
+**重要**：已登录用户必须跳转到UCM**后端**验证接口，而不是前端地址。
+
+| 场景 | URL格式 | 说明 |
+|------|---------|------|
+| 已登录跳转 | `{UCM后端}/api/auth/sso/verify_session?session_id={session_id}` | 后端验证后重定向前端 |
+| 未登录跳转 | `{UCM前端}/` | 直接到前端，会触发登录流程 |
+
+**测试环境地址**：
+- UCM后端：`http://localhost:8001`
+- UCM前端：`http://127.0.0.1:5173`
+
+**正确的已登录跳转示例**：
+```
+http://localhost:8001/api/auth/sso/verify_session?session_id=mock_session_000735977_xxx
+```
+
+**错误的跳转方式（不要使用）**：
+```
+http://127.0.0.1:5173/?session_id=xxx  ❌ 直接跳前端，session不会被存储
+```
 
 ## 完整跳转流程
 
@@ -190,7 +207,13 @@ const verifyUrl = `${ucmConfig.backend}/api/auth/sso/verify_session?session_id=$
 
 ## 环境配置对照
 
-| 环境 | SSO服务 | 工具集地址 | UCM地址 |
-|------|---------|-----------|---------|
-| 测试 | Mock SSO (localhost:8000/mock-sso) | localhost:3000 | localhost:5173 |
-| 生产 | https://sso.netm.icbc | 生产域名 | 生产域名 |
+| 环境 | SSO服务 | 工具集地址 | UCM后端 | UCM前端 |
+|------|---------|-----------|---------|---------|
+| 测试 | Mock SSO (localhost:8000/mock-sso) | localhost:3000 | localhost:8001 | localhost:5173 |
+| 生产 | https://sso.netm.icbc | 生产域名 | 生产域名 | 生产域名 |
+
+**端口说明**：
+- `8000`: 工具集后端（含Mock SSO服务）
+- `8001`: UCM后端（Django）
+- `3000`: 工具集前端
+- `5173`: UCM前端（Vite）
