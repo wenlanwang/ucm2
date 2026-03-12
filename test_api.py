@@ -2,6 +2,9 @@ import os
 import sys
 import django
 import json
+import aisuite as ai
+
+
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ucm_backend.settings')
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

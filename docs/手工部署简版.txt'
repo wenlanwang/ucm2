@@ -1,0 +1,33 @@
+1.到ucm根目录下创建目录python_packages
+2.下载依赖包
+pip download -r requirements.txt -d ./python_packages
+3.构建前端
+cd ucm_frontend
+npm install
+npm run build
+会生成ucm_frontend/dist
+
+4.拷贝文件，不包含.开头，frontend只需要dist
+
+5.打包传输
+
+部署：
+1.创建虚拟环境
+cd D:\deploy\ucm2
+# 创建venv目录
+
+2.激活虚拟环境
+python -m venv venv
+venv\Scripts\activate
+
+3 安装主服务依赖
+
+
+4.pip install --no-index --find-links=python_packages -r requirements.txt
+
+5.启动后端
+cd D:\deploy\ucm2
+python manage.py runserver 0.0.0.0:8001
+
+6.启动前端
+前端托管在django中，启动后访问 http://localhost:8001/ 即可使用前端

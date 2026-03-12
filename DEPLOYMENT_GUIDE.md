@@ -14,7 +14,160 @@ UCM需求登记系统是一个基于Django + React的前后端分离系统，用
 - Node.js 16+
 - npm 8+
 
-## 部署步骤
+## 离线部署（内网环境）
+
+### 场景说明
+
+当需要在无法连接互联网的内网环境部署时，可使用本方案。该方案采用前端预构建 + Python依赖离线安装的方式，大幅减小传输体积。
+
+### 前提条件
+
+**可联网电脑（准备阶段）**：
+- Python 3.8+
+- Node.js 16+
+- 7-Zip 或 WinRAR（用于压缩）
+
+**内网服务器（部署阶段）**：
+- Python 3.8+
+- 已安装（无需Node.js，前端已预构建）
+
+### 部署流程
+
+#### 方式一：使用自动化脚本（推荐）
+
+**在可联网电脑上**：
+
+1. **准备离线文件**
+   ```bash
+   prepare_offline.bat
+   ```
+   该脚本会自动：
+   - 下载所有Python依赖到 `python_packages` 目录
+   - 构建前端静态文件到 `ucm_frontend/dist` 目录
+   - 清理不必要的测试图片和临时文件
+
+2. **创建部署包**
+   ```bash
+   create_deployment_package.bat
+   ```
+   该脚本会自动：
+   - 创建 `UCM_部署包_v1.0` 目录
+   - 复制Python依赖、后端代码、前端构建文件
+   - 生成部署清单
+
+3. **压缩部署包**
+   - 使用 7-Zip 压缩 `UCM_部署包_v1.0` 目录为 `.7z` 格式
+   - 通过U盘传输到内网服务器
+
+**在内网服务器上**：
+
+1. **解压部署包**
+   - 解压 `UCM_部署包_v1.0.7z` 到目标目录
+
+2. **执行部署**
+   ```bash
+   deploy_offline.bat
+   ```
+   该脚本会自动：
+   - 离线安装Python依赖
+   - 配置数据库
+   - 执行数据库迁移
+   - 初始化模板
+   - 设置管理员密码
+   - 启动后端服务
+
+3. **访问系统**
+   - 前端：http://localhost:8000/static/index.html
+   - 后台：http://localhost:8000/admin
+
+#### 方式二：手动操作
+
+**在可联网电脑上**：
+
+1. **下载Python依赖**
+   ```bash
+   pip download -r requirements.txt -d ./python_packages
+   ```
+
+2. **构建前端**
+   ```bash
+   cd ucm_frontend
+   npm install
+   npm run build
+   ```
+
+3. **打包文件**
+   ```
+   UCM_部署包_v1.0/
+   ├── 01_Python依赖/
+   │   └── python_packages/
+   ├── 02_项目代码/
+   │   ├── ucm_backend/
+   │   ├── ucm_app/
+   │   ├── ucm_frontend/dist/
+   │   ├── manage.py
+   │   ├── requirements.txt
+   │   ├── init_templates.py
+   │   ├── init_sample_data.py
+   │   ├── set_admin_password.py
+   │   ├── start_backend.bat
+   │   ├── 导入-模板.xls
+   │   ├── 删除-模板.xls
+   │   └── 修改-模板.xls
+   └── 部署清单.txt
+   ```
+
+**在内网服务器上**：
+
+1. **安装Python依赖（离线）**
+   ```bash
+   cd 01_Python依赖/python_packages
+   pip install --no-index --find-links=. -r ../../02_项目代码/requirements.txt
+   ```
+
+2. **配置后端**
+   ```bash
+   cd 02_项目代码
+   python manage.py migrate
+   python init_templates.py
+   python init_sample_data.py  # 可选
+   python set_admin_password.py
+   ```
+
+3. **启动服务**
+   ```bash
+   start_backend.bat
+   ```
+
+### 部署包说明
+
+**大小对比**：
+- 开发模式：约 200-250MB（包含 node_modules）
+- 离线部署：约 30-50MB（仅包含依赖包和构建文件）
+
+**包含内容**：
+- Python依赖包：20-30MB
+- 后端代码：5-10MB
+- 前端构建文件：2-5MB
+- 其他文件：< 5MB
+
+### 常见问题
+
+**1. pip安装失败**
+   - 确保Python版本为3.8+
+   - 检查 `python_packages` 目录是否完整
+
+**2. 前端无法访问**
+   - 检查 `ucm_frontend/dist` 目录是否存在
+   - 确认后端服务已启动
+
+**3. 数据库迁移失败**
+   - 检查数据库目录权限
+   - 确保SQLite版本兼容
+
+## 在线部署（开发环境）
+
+适用于有网络连接的开发环境。
 
 ### 1. 后端部署
 

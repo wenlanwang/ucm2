@@ -171,6 +171,15 @@ USE_TZ = False
 
 STATIC_URL = 'static/'
 
+# 前端构建文件目录（用于托管前端静态文件）
+import os
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'ucm_frontend', 'dist'),
+]
+
+# 生产环境静态文件收集目录
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
