@@ -96,7 +96,7 @@ class Migration(migrations.Migration):
                 ('status', models.CharField(choices=[('pending', '待处理'), ('processed', '已处理')], default='pending', max_length=10, verbose_name='状态')),
                 ('process_time', models.DateTimeField(blank=True, null=True, verbose_name='处理时间')),
                 ('requirement_data', models.TextField(verbose_name='需求数据(JSON)')),
-                ('name', models.CharField(max_length=200, verbose_name='名称')),
+                ('device_name', models.CharField(max_length=200, verbose_name='名称')),
                 ('ip', models.CharField(max_length=50, verbose_name='IP')),
                 ('processor', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='processed_requirements', to=settings.AUTH_USER_MODEL, verbose_name='处理人')),
                 ('submitter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL, verbose_name='登记人')),

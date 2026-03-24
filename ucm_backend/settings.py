@@ -130,7 +130,7 @@ WSGI_APPLICATION = 'ucm_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': 'd:/database/mydb_ucm.db',
+        'NAME': BASE_DIR / 'mydb_ucm.db',
     }
 }
 

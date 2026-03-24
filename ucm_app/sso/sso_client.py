@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class SSOClient:
     """SSO HTTP 客户端"""
     
-    def __init__(self, base_url: str, timeout: int = 10):
+    def __init__(self, base_url: str, timeout: int = 30):
         """
         初始化 SSO 客户端
         
@@ -50,7 +50,7 @@ class SSOClient:
         
         try:
             logger.info(f"调用 SSO check_session: {url}")
-            response = requests.get(url, params=params, timeout=self.timeout)
+            response = requests.get(url, params=params, timeout=self.timeout, verify=False)
             response.raise_for_status()
             
             data = response.json()
@@ -84,7 +84,7 @@ class SSOClient:
         
         try:
             logger.info(f"调用 SSO logout: {url}")
-            response = requests.get(url, params=params, timeout=self.timeout)
+            response = requests.get(url, params=params, timeout=self.timeout, verify=False)
             response.raise_for_status()
             return True
         except requests.RequestException as e:
@@ -110,7 +110,8 @@ class SSOClient:
             response = requests.post(
                 url, 
                 json={'userid': userid}, 
-                timeout=self.timeout
+                timeout=self.timeout,
+                verify=False
             )
             response.raise_for_status()
             return response.json()

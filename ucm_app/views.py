@@ -645,6 +645,13 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                         })
                         continue
 
+                    # 获取等待通知设置
+                    wait_notification = req_data.get('等待通知', '否') == '是'
+                    notification_note = req_data.get('等待说明', '')
+
+                    # 确定初始状态
+                    initial_status = 'waiting_notification' if wait_notification else 'pending'
+
                     # 创建需求记录
                     requirement = UCMRequirement(
                         requirement_type=requirement_type,
@@ -652,7 +659,10 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                         submitter=request.user,
                         requirement_data=json.dumps(req_data, ensure_ascii=False),
                         device_name=name,
-                        ip=ip
+                        ip=ip,
+                        wait_notification=wait_notification,
+                        notification_note=notification_note,
+                        status=initial_status
                     )
                     requirement.save()
                     submitted_count += 1
@@ -719,13 +729,21 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         success_count = 0
         for row_data in excel_data:
             try:
+                # 获取等待通知设置
+                wait_notification = row_data.get('等待通知', '否') == '是'
+                notification_note = row_data.get('等待说明', '')
+                initial_status = 'waiting_notification' if wait_notification else 'pending'
+
                 requirement = UCMRequirement(
                     requirement_type=requirement_type,
                     ucm_change_date=ucm_change_date,
                     submitter=request.user,
                     requirement_data=json.dumps(row_data, ensure_ascii=False),
                     device_name=row_data.get('名称', ''),
-                    ip=row_data.get('IP', '')
+                    ip=row_data.get('IP', ''),
+                    wait_notification=wait_notification,
+                    notification_note=notification_note,
+                    status=initial_status
                 )
                 requirement.save()
                 success_count += 1
@@ -779,6 +797,165 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         ).delete()
 
         return Response({'success': True, 'count': count})
+    
+    @action(detail=False, methods=['post'])
+    def submit_delete_then_add(self, request):
+        """
+        提交删除后新增需求
+        将一条记录拆分为两条关联需求：一条delete类型，一条import类型
+        """
+        from django.db import transaction
+        
+        ucm_change_date = request.data.get('ucm_change_date')
+        requirements = request.data.get('requirements', [])
+        
+        if not all([ucm_change_date, requirements]):
+            return Response({'error': '参数不完整'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            with transaction.atomic():
+                submitted_count = 0
+                skipped_count = 0
+                skipped_records = []
+                submitted_ids = []
+                
+                # 获取所有有效的可选值
+                valid_device_types = ManufacturerVersionInfo.objects.values_list(
+                    'device_type', flat=True
+                ).distinct()
+                
+                valid_manufacturers = ManufacturerVersionInfo.objects.values_list(
+                    'manufacturer', flat=True
+                ).distinct()
+                
+                valid_versions = ManufacturerVersionInfo.objects.values_list(
+                    'version', flat=True
+                ).distinct()
+                
+                for req_data in requirements:
+                    name = req_data.get('名称', '')
+                    ip = req_data.get('IP', '')
+                    device_type = req_data.get('设备类型', '')
+                    manufacturer = req_data.get('品牌(厂商)', '')
+                    version = req_data.get('版本', '')
+                    
+                    # 获取等待通知设置
+                    delete_wait_notification = req_data.get('删除等待通知', '否') == '是'
+                    delete_notification_note = req_data.get('删除等待说明', '')
+                    add_wait_notification = req_data.get('新增等待通知', '否') == '是'
+                    add_notification_note = req_data.get('新增等待说明', '')
+                    
+                    # 数据校验
+                    if device_type and device_type not in valid_device_types:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': f'设备类型 "{device_type}" 不在可选范围内'
+                        })
+                        continue
+                    
+                    if manufacturer and manufacturer not in valid_manufacturers:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': f'品牌(厂商) "{manufacturer}" 不在可选范围内'
+                        })
+                        continue
+                    
+                    if version and version not in valid_versions:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': f'版本 "{version}" 不在可选范围内'
+                        })
+                        continue
+                    
+                    # 检查重复
+                    existing = UCMRequirement.objects.filter(
+                        Q(device_name=name) | Q(ip=ip),
+                        ucm_change_date=ucm_change_date,
+                        status='pending'
+                    ).first()
+                    
+                    if existing:
+                        skipped_count += 1
+                        skipped_records.append({
+                            'name': name,
+                            'ip': ip,
+                            'reason': '重复记录'
+                        })
+                        continue
+                    
+                    # 确定初始状态
+                    delete_status = 'waiting_notification' if delete_wait_notification else 'pending'
+                    add_status = 'waiting_notification' if add_wait_notification else 'pending'
+                    
+                    # 创建删除需求
+                    delete_requirement = UCMRequirement(
+                        requirement_type='delete',
+                        ucm_change_date=ucm_change_date,
+                        submitter=request.user,
+                        requirement_data=json.dumps(req_data, ensure_ascii=False),
+                        device_name=name,
+                        ip=ip,
+                        sequence=1,
+                        wait_notification=delete_wait_notification,
+                        notification_note=delete_notification_note,
+                        status=delete_status
+                    )
+                    delete_requirement.save()
+                    
+                    # 创建新增需求
+                    add_requirement = UCMRequirement(
+                        requirement_type='import',
+                        ucm_change_date=ucm_change_date,
+                        submitter=request.user,
+                        requirement_data=json.dumps(req_data, ensure_ascii=False),
+                        device_name=name,
+                        ip=ip,
+                        sequence=2,
+                        wait_notification=add_wait_notification,
+                        notification_note=add_notification_note,
+                        status=add_status
+                    )
+                    add_requirement.save()
+                    
+                    # 建立关联
+                    delete_requirement.related_requirement = add_requirement
+                    add_requirement.related_requirement = delete_requirement
+                    delete_requirement.save()
+                    add_requirement.save()
+                    
+                    submitted_count += 1
+                    submitted_ids.extend([delete_requirement.id, add_requirement.id])
+                
+                return Response({
+                    'success': True,
+                    'submitted_count': submitted_count,
+                    'skipped_count': skipped_count,
+                    'skipped_records': skipped_records,
+                    'submitted_ids': submitted_ids
+                })
+        except Exception as e:
+            return Response({'error': f'提交失败: {str(e)}'}, 
+                          status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def mark_notification_received(self, request, pk=None):
+        """标记已收到通知"""
+        requirement = self.get_object()
+        requirement.notification_received = True
+        requirement.notification_receive_time = timezone.now()
+        
+        # 如果之前是待通知状态，改为待处理
+        if requirement.status == 'waiting_notification':
+            requirement.status = 'pending'
+        
+        requirement.save()
+        return Response({'success': True, 'status': requirement.status})
 
     @action(detail=False, methods=['get'])
     def weekly_dates(self, request):

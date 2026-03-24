@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag, Popconfirm } from 'antd';
-import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag, Popconfirm, Checkbox, Collapse, Input } from 'antd';
+import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined, NotificationOutlined } from '@ant-design/icons';
+import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -32,12 +33,22 @@ interface ValidationResult {
   warnings: Record<string, string>;
 }
 
+// 判断列名是否为等待通知相关列（移到组件外部避免依赖问题）
+const isWaitNotificationColumn = (columnName: string): boolean => {
+  const waitColumns = [
+    '等待通知', '等待说明',
+    '删除等待通知', '删除等待说明',
+    '新增等待通知', '新增等待说明'
+  ];
+  return waitColumns.includes(columnName);
+};
+
 export default function RequirementRegister() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   
   // 状态管理
-  const [activeTab, setActiveTab] = useState<'import' | 'modify' | 'delete'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'modify' | 'delete' | 'delete_then_add'>('import');
   const [ucmChangeDate, setUcmChangeDate] = useState<dayjs.Dayjs | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [deadlines, setDeadlines] = useState<Record<string, string>>({});
@@ -55,6 +66,20 @@ export default function RequirementRegister() {
   const [pageSize, setPageSize] = useState(10);
   const nextRowId = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 等待通知设置状态
+  const [waitNotificationSettings, setWaitNotificationSettings] = useState({
+    waitNotification: false,
+    notificationNote: '',
+  });
+
+  // 删除后新增类型的等待通知设置
+  const [deleteThenAddSettings, setDeleteThenAddSettings] = useState({
+    deleteWaitNotification: false,
+    deleteNotificationNote: '',
+    addWaitNotification: false,
+    addNotificationNote: '',
+  });
   
   // 加载可用UCM日期
   useEffect(() => {
@@ -92,8 +117,47 @@ export default function RequirementRegister() {
       backgroundColor: '#fff1f0',
       borderColor: '#f5222d',
       textColor: '#cf1322'
+    },
+    delete_then_add: {
+      backgroundColor: '#f6ffed',
+      borderColor: '#52c41a',
+      textColor: '#389e0d'
     }
   };
+
+  // 自动应用等待通知设置到全部行（新增/修改/删除类型）
+  useEffect(() => {
+    if (activeTab !== 'delete_then_add' && tableData.length > 0) {
+      setTableData(prevData => {
+        return prevData.map(row => ({
+          ...row,
+          data: {
+            ...row.data,
+            '等待通知': waitNotificationSettings.waitNotification ? '是' : '否',
+            '等待说明': waitNotificationSettings.notificationNote,
+          }
+        }));
+      });
+    }
+  }, [waitNotificationSettings, activeTab]);
+
+  // 自动应用删除后新增等待通知设置到全部行
+  useEffect(() => {
+    if (activeTab === 'delete_then_add' && tableData.length > 0) {
+      setTableData(prevData => {
+        return prevData.map(row => ({
+          ...row,
+          data: {
+            ...row.data,
+            '删除等待通知': deleteThenAddSettings.deleteWaitNotification ? '是' : '否',
+            '删除等待说明': deleteThenAddSettings.deleteNotificationNote,
+            '新增等待通知': deleteThenAddSettings.addWaitNotification ? '是' : '否',
+            '新增等待说明': deleteThenAddSettings.addNotificationNote,
+          }
+        }));
+      });
+    }
+  }, [deleteThenAddSettings, activeTab]);
 
   // 自动选择最近的可选日期
   const selectNearestAvailableDate = (dates: string[]): dayjs.Dayjs | null => {
@@ -139,8 +203,14 @@ export default function RequirementRegister() {
       const templates = response.data.results || response.data;
       console.log('Templates array:', templates);
       
-      // 当activeTab为'delete'时，使用'import'类型的模板配置
-      const templateType = activeTab === 'delete' ? 'import' : activeTab;
+      // 确定要使用的模板类型
+      // delete: 使用import模板
+      // delete_then_add: 使用delete_then_add模板（包含等待通知字段）
+      let templateType = activeTab;
+      if (activeTab === 'delete') {
+        templateType = 'import';
+      }
+      
       const template = templates.find((t: any) => t.template_type === templateType);
       console.log('Found template for type', templateType, ':', template);
       
@@ -345,7 +415,7 @@ export default function RequirementRegister() {
   }, [templateColumns, columnOptions, vendorVersionData]);
 
   const handleTabChange = (key: string) => {
-    setActiveTab(key as 'import' | 'modify' | 'delete');
+    setActiveTab(key as 'import' | 'modify' | 'delete' | 'delete_then_add');
     setTableData([]);
 
     // 重新自动选择日期
@@ -562,22 +632,37 @@ export default function RequirementRegister() {
       const headerRow = worksheet.addRow(headers);
 
       // 类型配置
-      const typeConfig = {
+      const typeConfig: Record<string, { bgColor: string; textColor: string }> = {
         import: { bgColor: 'FFE6F7FF', textColor: 'FF0050B3' },
         modify: { bgColor: 'FFFFF7E6', textColor: 'FFD46B08' },
-        delete: { bgColor: 'FFFFF1F0', textColor: 'FFCF1322' }
+        delete: { bgColor: 'FFFFF1F0', textColor: 'FFCF1322' },
+        delete_then_add: { bgColor: 'FFF6FFED', textColor: 'FF389E0D' }
       };
 
-      const config = typeConfig[activeTab];
+      const config = typeConfig[activeTab] || typeConfig.import;
 
       // 设置表头样式
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: config.textColor } };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: config.bgColor }
-        };
+      headerRow.eachCell((cell, colNumber) => {
+        const colName = columns[colNumber - 1]?.name || '';
+        const isWaitColumn = isWaitNotificationColumn(colName);
+
+        // 等待通知列使用紫色样式，其他列使用类型对应的样式
+        if (isWaitColumn) {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF9F0FF' }  // 浅紫色背景
+          };
+          cell.font = { bold: true, color: { argb: 'FF722ED1' } };  // 紫色文字
+        } else {
+          cell.font = { bold: true, color: { argb: config.textColor } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: config.bgColor }
+          };
+        }
+
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         cell.border = {
           top: { style: 'thin' },
@@ -612,12 +697,13 @@ export default function RequirementRegister() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      const typeMap = {
+      const typeMap: Record<string, string> = {
         import: '导入',
         modify: '修改',
-        delete: '删除'
+        delete: '删除',
+        delete_then_add: '删除后新增'
       };
-      link.setAttribute('download', `${typeMap[activeTab]}_模板.xls`);
+      link.setAttribute('download', `${typeMap[activeTab] || '模板'}_模板.xls`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -895,21 +981,33 @@ export default function RequirementRegister() {
   
   const submitRequirements = async () => {
     try {
-      // 当activeTab为'delete'时，requirement_type传递'delete'，但数据结构是"导入模板"格式
-      const response = await api.post('/requirements/batch_submit/', {
-        requirement_type: activeTab,
-        ucm_change_date: ucmChangeDate?.format('YYYY-MM-DD') || '',
-        requirements: tableData.map(row => row.data)
-      });
+      let response;
+      
+      // 根据activeTab选择不同的API
+      if (activeTab === 'delete_then_add') {
+        // 删除后新增使用专用API
+        response = await api.post('/requirements/submit_delete_then_add/', {
+          ucm_change_date: ucmChangeDate?.format('YYYY-MM-DD') || '',
+          requirements: tableData.map(row => row.data)
+        });
+      } else {
+        // 其他类型使用原有API
+        // 当activeTab为'delete'时，requirement_type传递'delete'，但数据结构是"导入模板"格式
+        response = await api.post('/requirements/batch_submit/', {
+          requirement_type: activeTab,
+          ucm_change_date: ucmChangeDate?.format('YYYY-MM-DD') || '',
+          requirements: tableData.map(row => row.data)
+        });
+      }
 
       Modal.success({
         title: '登记成功',
-        content: `已成功登记 ${response.data.submitted_count} 条需求`,
+        content: `已成功登记 ${response.data.submitted_count} 条需求${activeTab === 'delete_then_add' ? '（每条拆分为删除和新增两条记录）' : ''}`,
         onOk: () => {
           // 跳转到需求列表页面，使用URL参数传递筛选条件
           const params = new URLSearchParams();
           params.set('ucm_change_date', ucmChangeDate?.format('YYYY-MM-DD') || '');
-          params.set('requirement_type', activeTab);
+          params.set('requirement_type', activeTab === 'delete_then_add' ? 'delete' : activeTab);
           params.set('submitter', user?.username || '');
           
           if (response.data.submitted_ids && response.data.submitted_ids.length > 0) {
@@ -1004,34 +1102,43 @@ export default function RequirementRegister() {
       },
       {
         title: '类型',
-        width: 80,
+        width: 100,
         fixed: 'left' as const,
         render: () => {
-          const typeMap = {
+          const typeMap: Record<string, { text: string; color: string }> = {
             import: { text: '导入', color: 'blue' },
             delete: { text: '删除', color: 'red' },
-            modify: { text: '修改', color: 'orange' }
+            modify: { text: '修改', color: 'orange' },
+            delete_then_add: { text: '删除后新增', color: 'green' }
           };
-          const typeConfig = typeMap[activeTab];
+          const typeConfig = typeMap[activeTab] || typeMap.import;
           return <Tag color={typeConfig.color}>{typeConfig.text}</Tag>;
         },
       },
     ];
-    
+
     // 添加模板列
     const templateCols = Array.isArray(templateColumns) ? templateColumns : [];
 
-    templateCols.forEach(col => {
+    // 过滤掉等待通知列：所有类型在表格中都不显示等待通知相关列
+    const filteredCols = templateCols.filter(col => !isWaitNotificationColumn(col.name));
+
+    filteredCols.forEach(col => {
+      const columnStyle = typeColumnStyles[activeTab];
+
       const columnConfig: any = {
         title: (
           <div style={{
-            backgroundColor: typeColumnStyles[activeTab].backgroundColor,
-            borderLeft: `3px solid ${typeColumnStyles[activeTab].borderColor}`,
+            backgroundColor: columnStyle.backgroundColor,
+            borderLeft: `3px solid ${columnStyle.borderColor}`,
             padding: '4px 8px',
-            color: typeColumnStyles[activeTab].textColor,
+            color: columnStyle.textColor,
             fontWeight: 'bold',
             lineHeight: '1.2',
-            fontSize: '13px'
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
           }}>
             {col.name}
             {col.required && <span style={{ color: '#ff4d4f', marginLeft: '4px' }}>*</span>}
@@ -1050,9 +1157,9 @@ export default function RequirementRegister() {
 
       columns.push(columnConfig);
     });
-    
+
     return columns;
-  }, [templateColumns, handleCopyRow, handleDeleteRow, renderEditableCell, currentPage, pageSize]);
+  }, [templateColumns, handleCopyRow, handleDeleteRow, renderEditableCell, currentPage, pageSize, activeTab]);
   
   return (
     <div>
@@ -1130,6 +1237,22 @@ export default function RequirementRegister() {
                 </span>
               )
             },
+            {
+              key: 'delete_then_add',
+              label: (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '4px',
+                  backgroundColor: activeTab === 'delete_then_add' ? typeColumnStyles.delete_then_add.backgroundColor : 'transparent',
+                  color: activeTab === 'delete_then_add' ? typeColumnStyles.delete_then_add.textColor : 'inherit',
+                  fontWeight: activeTab === 'delete_then_add' ? 600 : 'normal',
+                  border: activeTab === 'delete_then_add' ? `1px solid ${typeColumnStyles.delete_then_add.borderColor}` : 'none',
+                  display: 'inline-block'
+                }}>
+                  删除后新增
+                </span>
+              )
+            },
           ]}
         />
         
@@ -1199,7 +1322,107 @@ export default function RequirementRegister() {
             </Tag>
           </Space>
         </div>
-        
+
+        {/* 等待通知快速填充面板 */}
+        <Collapse
+          defaultActiveKey={['1']}
+          style={{ marginBottom: 16 }}
+          items={[
+            {
+              key: '1',
+              label: (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <NotificationOutlined style={{ color: '#722ed1' }} />
+                  <span>等待通知设置</span>
+                  <Tag color="purple" style={{ marginLeft: 8 }}>
+                    {activeTab === 'delete_then_add' ? '删除+新增' : '单操作'}
+                  </Tag>
+                  <span style={{ color: '#999', fontSize: '12px', marginLeft: 8 }}>
+                    (设置后自动应用到全部行)
+                  </span>
+                </span>
+              ),
+              children: activeTab === 'delete_then_add' ? (
+                // 删除后新增类型：两组设置放在同一横排
+                <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap' }}>
+                  {/* 删除操作 */}
+                  <Space>
+                    <span style={{ color: '#cf1322', fontWeight: 500 }}>删除:</span>
+                    <Checkbox
+                      checked={deleteThenAddSettings.deleteWaitNotification}
+                      onChange={(e: CheckboxChangeEvent) => setDeleteThenAddSettings(prev => ({
+                        ...prev,
+                        deleteWaitNotification: e.target.checked
+                      }))}
+                    >
+                      等待通知
+                    </Checkbox>
+                    {deleteThenAddSettings.deleteWaitNotification && (
+                      <Input
+                        placeholder="等待说明"
+                        value={deleteThenAddSettings.deleteNotificationNote}
+                        onChange={(e) => setDeleteThenAddSettings(prev => ({
+                          ...prev,
+                          deleteNotificationNote: e.target.value
+                        }))}
+                        style={{ width: 180 }}
+                      />
+                    )}
+                  </Space>
+                  {/* 新增操作 */}
+                  <Space>
+                    <span style={{ color: '#389e0d', fontWeight: 500 }}>新增:</span>
+                    <Checkbox
+                      checked={deleteThenAddSettings.addWaitNotification}
+                      onChange={(e: CheckboxChangeEvent) => setDeleteThenAddSettings(prev => ({
+                        ...prev,
+                        addWaitNotification: e.target.checked
+                      }))}
+                    >
+                      等待通知
+                    </Checkbox>
+                    {deleteThenAddSettings.addWaitNotification && (
+                      <Input
+                        placeholder="等待说明"
+                        value={deleteThenAddSettings.addNotificationNote}
+                        onChange={(e) => setDeleteThenAddSettings(prev => ({
+                          ...prev,
+                          addNotificationNote: e.target.value
+                        }))}
+                        style={{ width: 180 }}
+                      />
+                    )}
+                  </Space>
+                </div>
+              ) : (
+                // 新增/修改/删除类型：一组设置，Checkbox和Input同行
+                <Space>
+                  <Checkbox
+                    checked={waitNotificationSettings.waitNotification}
+                    onChange={(e: CheckboxChangeEvent) => setWaitNotificationSettings(prev => ({
+                      ...prev,
+                      waitNotification: e.target.checked
+                    }))}
+                  >
+                    等待通知
+                  </Checkbox>
+                  {waitNotificationSettings.waitNotification && (
+                    <Input
+                      placeholder="请输入等待说明"
+                      value={waitNotificationSettings.notificationNote}
+                      onChange={(e) => setWaitNotificationSettings(prev => ({
+                        ...prev,
+                        notificationNote: e.target.value
+                      }))}
+                      style={{ width: 300 }}
+                    />
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
+
         {/* 数据表格 */}
         <Table
           columns={tableColumns}

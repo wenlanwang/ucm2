@@ -34,6 +34,9 @@ class UCMRequirementSerializer(serializers.ModelSerializer):
     submitter_name = serializers.CharField(source='submitter.username', read_only=True)
     processor_name = serializers.CharField(source='processor.username', read_only=True, allow_null=True)
     requirement_data_dict = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    requirement_type_display = serializers.CharField(source='get_requirement_type_display', read_only=True)
+    related_requirement_info = serializers.SerializerMethodField()
 
     class Meta:
         model = UCMRequirement
@@ -42,6 +45,18 @@ class UCMRequirementSerializer(serializers.ModelSerializer):
     def get_requirement_data_dict(self, obj):
         """返回解析后的 requirement_data 字典"""
         return obj.get_requirement_data_dict()
+    
+    def get_related_requirement_info(self, obj):
+        """返回关联需求的简要信息"""
+        if obj.related_requirement:
+            return {
+                'id': obj.related_requirement.id,
+                'requirement_type': obj.related_requirement.requirement_type,
+                'requirement_type_display': obj.related_requirement.get_requirement_type_display(),
+                'sequence': obj.related_requirement.sequence,
+                'status': obj.related_requirement.status
+            }
+        return None
 
 
 class TemplateConfigSerializer(serializers.ModelSerializer):

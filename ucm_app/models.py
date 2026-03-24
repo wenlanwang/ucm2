@@ -79,26 +79,47 @@ class UCMRequirement(models.Model):
         ('import', '导入'),
         ('modify', '修改'),
         ('delete', '删除'),
+        ('delete_then_add', '删除后新增'),
     ]
     
     STATUS_CHOICES = [
+        ('waiting_notification', '待通知'),
         ('pending', '待处理'),
+        ('processing', '处理中'),
         ('processed', '已处理'),
     ]
     
-    requirement_type = models.CharField(max_length=10, choices=REQUIREMENT_TYPES, verbose_name='需求类型')
+    requirement_type = models.CharField(max_length=20, choices=REQUIREMENT_TYPES, verbose_name='需求类型')
     ucm_change_date = models.DateField(verbose_name='UCM变更日期')
     submitter = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='登记人')
     submit_time = models.DateTimeField(auto_now_add=True, verbose_name='登记时间')
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
     processor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_requirements', verbose_name='处理人')
     process_time = models.DateTimeField(null=True, blank=True, verbose_name='处理时间')
     requirement_data = models.TextField(verbose_name='需求数据(JSON)')
     note = models.TextField(blank=True, null=True, verbose_name='备注')
     
     # 用于快速查询的冗余字段（从requirement_data中提取）
-    device_name = models.CharField(max_length=200, verbose_name='名称')
-    ip = models.CharField(max_length=50, verbose_name='IP')
+    device_name = models.CharField(max_length=200, null=True, blank=True, verbose_name='名称')
+    ip = models.CharField(max_length=50, null=True, blank=True, verbose_name='IP')
+    
+    # 关联需求字段（用于删除后新增场景）
+    related_requirement = models.ForeignKey(
+        'self', 
+        null=True, 
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='linked_requirements',
+        verbose_name='关联需求'
+    )
+    sequence = models.IntegerField(null=True, blank=True, verbose_name='执行顺序')
+    # sequence说明：1=第一步(删除)，2=第二步(新增)
+    
+    # 等待通知相关字段
+    wait_notification = models.BooleanField(default=False, verbose_name='是否等待通知')
+    notification_note = models.CharField(max_length=200, blank=True, default='', verbose_name='等待说明')
+    notification_received = models.BooleanField(default=False, verbose_name='是否已收到通知')
+    notification_receive_time = models.DateTimeField(null=True, blank=True, verbose_name='收到通知时间')
 
     class Meta:
         verbose_name = 'UCM需求登记'
@@ -133,9 +154,10 @@ class TemplateConfig(models.Model):
         ('import', '导入'),
         ('modify', '修改'),
         ('delete', '删除'),
+        ('delete_then_add', '删除后新增'),
     ]
     
-    template_type = models.CharField(max_length=10, choices=TEMPLATE_TYPES, unique=True, verbose_name='模板类型')
+    template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPES, unique=True, verbose_name='模板类型')
     column_definitions = models.TextField(verbose_name='列定义(JSON)')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')

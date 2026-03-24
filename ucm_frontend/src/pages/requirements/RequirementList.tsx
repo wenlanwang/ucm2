@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, EditOutlined } from '@ant-design/icons';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip } from 'antd';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, EditOutlined, BellOutlined, NotificationOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import { useSearchParams } from 'react-router-dom';
@@ -10,17 +10,34 @@ import api from '../../services/api';
 
 interface Requirement {
   id: number;
-  requirement_type: 'import' | 'modify' | 'delete';
+  requirement_type: 'import' | 'modify' | 'delete' | 'delete_then_add';
   device_name: string;
   ip: string;
   submitter_name: string;
   submit_time: string;
   ucm_change_date: string;
-  status: 'pending' | 'processed';
+  status: 'waiting_notification' | 'pending' | 'processing' | 'processed';
+  status_display?: string;
+  requirement_type_display?: string;
   processor_name?: string;
   process_time?: string;
   note?: string;
   requirement_data_dict?: Record<string, any>;
+  // 关联需求字段
+  related_requirement?: number;
+  related_requirement_info?: {
+    id: number;
+    requirement_type: string;
+    requirement_type_display: string;
+    sequence: number;
+    status: string;
+  } | null;
+  sequence?: number;
+  // 等待通知字段
+  wait_notification?: boolean;
+  notification_note?: string;
+  notification_received?: boolean;
+  notification_receive_time?: string;
 }
 
 interface DateStatistics {
@@ -69,10 +86,27 @@ export default function RequirementList() {
   const [vendorVersionData, setVendorVersionData] = useState<any[]>([]);
   const [columnOptions, setColumnOptions] = useState<Record<string, string[]>>({});
 
-  const requirementTypeText = {
+  const requirementTypeText: Record<string, string> = {
     import: '导入',
     modify: '修改',
-    delete: '删除'
+    delete: '删除',
+    delete_then_add: '删除后新增'
+  };
+
+  // 状态文本映射
+  const statusText: Record<string, string> = {
+    waiting_notification: '待通知',
+    pending: '待处理',
+    processing: '处理中',
+    processed: '已处理'
+  };
+
+  // 状态颜色映射
+  const statusColor: Record<string, string> = {
+    waiting_notification: 'orange',
+    pending: 'blue',
+    processing: 'cyan',
+    processed: 'green'
   };
 
   // 列名样式配置
@@ -91,6 +125,11 @@ export default function RequirementList() {
       backgroundColor: '#fff1f0',
       borderColor: '#f5222d',
       textColor: '#cf1322'
+    },
+    delete_then_add: {
+      backgroundColor: '#f6ffed',
+      borderColor: '#52c41a',
+      textColor: '#389e0d'
     }
   };
 
@@ -335,6 +374,19 @@ export default function RequirementList() {
     try {
       await api.post(`/requirements/${id}/mark_as_processed/`);
       message.success('标记完成成功');
+      loadData();
+      // 重新加载统计
+      if (selectedDate) loadDateStatistics(selectedDate);
+    } catch (error) {
+      message.error('操作失败');
+    }
+  };
+
+  // 标记收到通知
+  const handleNotificationReceived = async (id: number) => {
+    try {
+      await api.post(`/requirements/${id}/mark_notification_received/`);
+      message.success('已标记收到通知');
       loadData();
       // 重新加载统计
       if (selectedDate) loadDateStatistics(selectedDate);
@@ -812,7 +864,7 @@ export default function RequirementList() {
   const rightFixedColumns = [
     {
       title: '操作',
-      width: 120,
+      width: 150,
       fixed: 'right' as const,
       render: (_: any, record: Requirement) => (
         <Space size="small">
@@ -823,7 +875,18 @@ export default function RequirementList() {
             title="编辑"
             onClick={() => handleEdit(record)}
           />
-          {record.status === 'pending' && (
+          {record.status === 'waiting_notification' && !record.notification_received && (
+            <Tooltip title="标记收到通知">
+              <Button
+                size="small"
+                type="text"
+                icon={<BellOutlined style={{ color: '#fa8c16' }} />}
+                title="收到通知"
+                onClick={() => handleNotificationReceived(record.id)}
+              />
+            </Tooltip>
+          )}
+          {(record.status === 'pending' || record.status === 'processing') && (
             <Popconfirm
               title="确认完成?"
               onConfirm={() => handleComplete(record.id)}
@@ -858,13 +921,28 @@ export default function RequirementList() {
     {
       title: '状态',
       dataIndex: 'status',
-      width: 80,
+      width: 120,
       fixed: 'right' as const,
-      render: (status: string) => (
-        <Tag color={status === 'processed' ? 'green' : 'orange'}>
-          {status === 'processed' ? '已处理' : '待处理'}
-        </Tag>
-      ),
+      render: (status: string, record: Requirement) => {
+        const displayText = statusText[status] || status;
+        const color = statusColor[status] || 'default';
+        
+        return (
+          <Space direction="vertical" size={0}>
+            <Tag color={color}>{displayText}</Tag>
+            {record.wait_notification && !record.notification_received && (
+              <Tooltip title={record.notification_note || '等待通知'}>
+                <Tag color="warning" style={{ fontSize: '10px' }}>
+                  <NotificationOutlined /> {record.notification_note ? record.notification_note.substring(0, 6) + '...' : '等待通知'}
+                </Tag>
+              </Tooltip>
+            )}
+            {record.notification_received && (
+              <Tag color="success" style={{ fontSize: '10px' }}>已收到通知</Tag>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1081,7 +1159,9 @@ export default function RequirementList() {
                 style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #d9d9d9', minWidth: 120 }}
               >
                 <option value="all">全部</option>
+                <option value="waiting_notification">待通知</option>
                 <option value="pending">待处理</option>
+                <option value="processing">处理中</option>
                 <option value="processed">已处理</option>
               </select>
             </div>
