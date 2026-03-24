@@ -759,6 +759,18 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
     def mark_as_processed(self, request, pk=None):
         """标记需求为已处理"""
         requirement = self.get_object()
+        
+        # 前置检查：如果是导入需求且有关联的删除需求需要先完成
+        if requirement.requirement_type == 'import' and requirement.sequence == 2 and requirement.related_requirement:
+            if requirement.related_requirement.requirement_type == 'delete':
+                if requirement.related_requirement.status != 'processed':
+                    return Response({
+                        'error': '需先完成关联的删除需求',
+                        'detail': f'该导入需求需要先完成关联的删除需求（ID: {requirement.related_requirement.id}）后才能处理',
+                        'related_delete_id': requirement.related_requirement.id,
+                        'related_delete_status': requirement.related_requirement.status
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        
         requirement.status = 'processed'
         requirement.processor = request.user
         requirement.process_time = timezone.now()

@@ -37,6 +37,7 @@ class UCMRequirementSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     requirement_type_display = serializers.CharField(source='get_requirement_type_display', read_only=True)
     related_requirement_info = serializers.SerializerMethodField()
+    has_prerequisite_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = UCMRequirement
@@ -57,6 +58,21 @@ class UCMRequirementSerializer(serializers.ModelSerializer):
                 'status': obj.related_requirement.status
             }
         return None
+    
+    def get_has_prerequisite_delete(self, obj):
+        """判断是否有关联的删除需求需要先完成
+        
+        条件：
+        1. 当前记录是 import 类型
+        2. 有 related_requirement 且 sequence=2（表示是删除后新增的新增部分）
+        3. 关联的删除记录未完成
+        """
+        if obj.requirement_type == 'import' and obj.sequence == 2 and obj.related_requirement:
+            # 检查关联的删除记录是否已完成
+            if obj.related_requirement.requirement_type == 'delete':
+                # 如果删除记录未完成，则返回 True
+                return obj.related_requirement.status != 'processed'
+        return False
 
 
 class TemplateConfigSerializer(serializers.ModelSerializer):

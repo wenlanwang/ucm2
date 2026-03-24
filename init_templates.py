@@ -13,35 +13,48 @@ from ucm_app.models import TemplateConfig
 # 等待通知字段定义
 # 通用等待通知字段（用于新增、修改、删除类型）
 wait_notification_columns = [
-    {"name": "等待通知", "required": False, "example": "是"},
-    {"name": "等待说明", "required": False, "example": "等相关部门通知后处理"},
+    {"name": "等待通知", "required": False, "example": ""},
+    {"name": "等待说明", "required": False, "example": ""},
 ]
 
 # 删除后新增专用字段
 delete_then_add_wait_columns = [
-    {"name": "删除等待通知", "required": False, "example": "是"},
-    {"name": "删除等待说明", "required": False, "example": "等网络部通知后删除"},
-    {"name": "新增等待通知", "required": False, "example": "是"},
-    {"name": "新增等待说明", "required": False, "example": "等应用部确认后新增"},
+    {"name": "删除等待通知", "required": False, "example": ""},
+    {"name": "删除等待说明", "required": False, "example": ""},
+    {"name": "新增等待通知", "required": False, "example": ""},
+    {"name": "新增等待说明", "required": False, "example": ""},
 ]
 
 def update_template(template_type, additional_columns):
-    """更新模板配置，添加等待通知字段"""
+    """更新模板配置，将等待通知字段放在最前面"""
     try:
         template = TemplateConfig.objects.get(template_type=template_type)
         existing_columns = template.get_column_definitions()
         
-        # 检查是否已包含等待通知字段
+        # 创建字段名到新配置的映射
+        additional_map = {col['name']: col for col in additional_columns}
+        additional_names = set(additional_map.keys())
         existing_names = [col['name'] for col in existing_columns]
-        new_columns = [col for col in additional_columns if col['name'] not in existing_names]
         
-        if new_columns:
-            updated_columns = existing_columns + new_columns
+        # 过滤掉旧的等待通知字段，保留其他字段
+        other_columns = [col for col in existing_columns if col['name'] not in additional_names]
+        
+        # 将等待通知字段放在最前面
+        updated_columns = additional_columns + other_columns
+        
+        # 统计变化
+        added_count = len([name for name in additional_names if name not in existing_names])
+        moved_count = len([name for name in additional_names if name in existing_names])
+        
+        if added_count > 0 or moved_count > 0:
             template.column_definitions = json.dumps(updated_columns, ensure_ascii=False)
             template.save()
-            print(f"更新模板 [{template.get_template_type_display()}]: 添加 {len(new_columns)} 列等待通知字段")
+            if added_count > 0:
+                print(f"更新模板 [{template.get_template_type_display()}]: 添加 {added_count} 列，等待通知字段已置于最前")
+            else:
+                print(f"更新模板 [{template.get_template_type_display()}]: 等待通知字段已移至最前")
         else:
-            print(f"模板 [{template.get_template_type_display()}]: 已包含等待通知字段，无需更新")
+            print(f"模板 [{template.get_template_type_display()}]: 无需更新")
         
         return template
     except TemplateConfig.DoesNotExist:
@@ -67,8 +80,8 @@ update_template('modify', wait_notification_columns)
 # 3. 更新删除模板
 update_template('delete', wait_notification_columns)
 
-# 4. 更新或创建删除后新增模板
-delete_then_add_columns = import_columns + delete_then_add_wait_columns
+# 4. 更新或创建删除后新增模板 - 等待通知字段放在最前面
+delete_then_add_columns = delete_then_add_wait_columns + import_columns
 
 template, created = TemplateConfig.objects.update_or_create(
     template_type='delete_then_add',

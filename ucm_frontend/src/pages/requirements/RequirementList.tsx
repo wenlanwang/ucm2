@@ -38,6 +38,8 @@ interface Requirement {
   notification_note?: string;
   notification_received?: boolean;
   notification_receive_time?: string;
+  // 前置删除检查
+  has_prerequisite_delete?: boolean;
 }
 
 interface DateStatistics {
@@ -68,7 +70,8 @@ export default function RequirementList() {
     import: any[];
     modify: any[];
     delete: any[];
-  }>({ import: [], modify: [], delete: [] });
+    delete_then_add: any[];
+  }>({ import: [], modify: [], delete: [], delete_then_add: [] });
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
@@ -327,9 +330,14 @@ export default function RequirementList() {
         columnsMap['delete'] = columnsMap['import'];
         console.log('删除类型使用导入模板的列配置');
       }
+      // 'delete_then_add'类型也使用'import'的列配置
+      if (columnsMap['import'] && columnsMap['import'].length > 0) {
+        columnsMap['delete_then_add'] = columnsMap['import'];
+        console.log('先删后增类型使用导入模板的列配置');
+      }
 
       console.log('所有模板列配置:', columnsMap);
-      setTemplateColumnsByType(columnsMap as { import: any[]; modify: any[]; delete: any[] });
+      setTemplateColumnsByType(columnsMap as { import: any[]; modify: any[]; delete: any[]; delete_then_add: any[] });
     } catch (error) {
       console.error('加载模板配置失败:', error);
     }
@@ -377,8 +385,13 @@ export default function RequirementList() {
       loadData();
       // 重新加载统计
       if (selectedDate) loadDateStatistics(selectedDate);
-    } catch (error) {
-      message.error('操作失败');
+    } catch (error: any) {
+      // 处理后端返回的错误响应
+      if (error.response?.data?.error) {
+        message.error(error.response.data.detail || error.response.data.error);
+      } else {
+        message.error('操作失败');
+      }
     }
   };
 
@@ -812,8 +825,8 @@ export default function RequirementList() {
     {
       title: '类型',
       dataIndex: 'requirement_type',
-      width: 70,
-      render: (type: 'import' | 'modify' | 'delete') => {
+      width: 90,
+      render: (type: 'import' | 'modify' | 'delete', record: Requirement) => {
         const typeConfig = {
           import: { text: '导入', bgColor: '#e6f7ff', textColor: '#0050b3' },
           modify: { text: '修改', bgColor: '#fff7e6', textColor: '#d46b08' },
@@ -821,16 +834,25 @@ export default function RequirementList() {
         };
         const config = typeConfig[type];
         return (
-          <span style={{
-            backgroundColor: config.bgColor,
-            color: config.textColor,
-            padding: '2px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold'
-          }}>
-            {config.text}
-          </span>
+          <Space size={2} wrap>
+            <span style={{
+              backgroundColor: config.bgColor,
+              color: config.textColor,
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}>
+              {config.text}
+            </span>
+            {record.has_prerequisite_delete && (
+              <Tooltip title="需先完成关联的删除需求">
+                <Tag color="error" style={{ fontSize: '10px', padding: '0 4px', margin: 0 }}>
+                  先删除
+                </Tag>
+              </Tooltip>
+            )}
+          </Space>
         );
       },
     },
@@ -887,19 +909,30 @@ export default function RequirementList() {
             </Tooltip>
           )}
           {(record.status === 'pending' || record.status === 'processing') && (
-            <Popconfirm
-              title="确认完成?"
-              onConfirm={() => handleComplete(record.id)}
-              okText="确定"
-              cancelText="取消"
-            >
-              <Button
-                size="small"
-                type="text"
-                icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                title="完成"
-              />
-            </Popconfirm>
+            record.has_prerequisite_delete ? (
+              <Tooltip title="需先完成关联的删除需求">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<CheckCircleOutlined style={{ color: '#d9d9d9' }} />}
+                  disabled
+                />
+              </Tooltip>
+            ) : (
+              <Popconfirm
+                title="确认完成?"
+                onConfirm={() => handleComplete(record.id)}
+                okText="确定"
+                cancelText="取消"
+              >
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                  title="完成"
+                />
+              </Popconfirm>
+            )
           )}
           <Popconfirm
             title="确认删除?"
