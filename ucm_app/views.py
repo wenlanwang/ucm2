@@ -351,16 +351,23 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             })
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
     @action(detail=False, methods=['post'])
     def validate_data(self, request):
         """校验数据"""
         requirement_type = request.data.get('requirement_type')
         excel_data = request.data.get('excel_data', [])
-        
+
         if not requirement_type or not excel_data:
             return Response({'error': '参数不完整'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        # 等待通知相关列名（这些列在校验时跳过）
+        WAIT_NOTIFICATION_COLUMNS = [
+            '等待通知', '等待说明',
+            '删除等待通知', '删除等待说明',
+            '新增等待通知', '新增等待说明'
+        ]
+
         # 获取模板配置
         try:
             template = TemplateConfig.objects.get(template_type=requirement_type)
@@ -368,22 +375,22 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             template_column_names = [col['name'] for col in template_columns]
         except TemplateConfig.DoesNotExist:
             return Response({'error': '模板配置不存在'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 列名校验
         excel_headers = list(excel_data[0].keys()) if excel_data else []
         missing_columns = []
         extra_columns = []
-        
-        # 检查缺少的列
+
+        # 检查缺少的列（跳过等待通知相关列）
         for col_def in template_columns:
-            if col_def['name'] not in excel_headers:
+            if col_def['name'] not in WAIT_NOTIFICATION_COLUMNS and col_def['name'] not in excel_headers:
                 missing_columns.append(col_def['name'])
-        
-        # 检查多余的列
+
+        # 检查多余的列（忽略等待通知相关列）
         for header in excel_headers:
-            if header not in template_column_names:
+            if header not in template_column_names and header not in WAIT_NOTIFICATION_COLUMNS:
                 extra_columns.append(header)
-        
+
         if missing_columns or extra_columns:
             return Response({
                 'valid': False,
@@ -411,12 +418,17 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
                 'errors': {},
                 'warnings': {}
             }
-            
+
             # 校验每列数据
             for col_def in template_columns:
                 col_name = col_def['name']
+
+                # 跳过等待通知相关列的校验
+                if col_name in WAIT_NOTIFICATION_COLUMNS:
+                    continue
+
                 value = row_data.get(col_name, '').strip()
-                
+
                 # 必填字段校验
                 if col_def['required'] and not value:
                     row_validation['errors'][col_name] = '此字段为必填项'

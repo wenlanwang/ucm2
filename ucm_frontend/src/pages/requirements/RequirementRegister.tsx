@@ -613,8 +613,8 @@ export default function RequirementRegister() {
   
   const handleDownloadTemplate = async () => {
     try {
-      // 获取当前类型的模板列配置
-      const columns = templateColumns || [];
+      // 获取当前类型的模板列配置，过滤掉等待通知相关列
+      const columns = (templateColumns || []).filter(col => !isWaitNotificationColumn(col.name));
 
       if (columns.length === 0) {
         message.warning('模板列配置未加载，请稍后再试');
@@ -806,12 +806,14 @@ export default function RequirementRegister() {
         return;
       }
       
-      // 检查列名是否匹配
-      const templateColumnNames = templateColumns.map(col => col.name);
-      console.log('模板列名:', templateColumnNames);
-      
+      // 检查列名是否匹配（过滤掉等待通知相关列）
+      const templateColumnNames = templateColumns
+        .filter(col => !isWaitNotificationColumn(col.name))
+        .map(col => col.name);
+      console.log('模板列名（不含等待通知列）:', templateColumnNames);
+
       const missingColumns = templateColumnNames.filter(name => !headers.includes(name));
-      const extraColumns = headers.filter(name => !templateColumnNames.includes(name));
+      const extraColumns = headers.filter(name => !templateColumnNames.includes(name) && !isWaitNotificationColumn(name));
       
       console.log('缺少列:', missingColumns);
       console.log('多余列:', extraColumns);

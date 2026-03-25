@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip } from 'antd';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip, Divider } from 'antd';
 import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, EditOutlined, BellOutlined, NotificationOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
@@ -675,12 +675,14 @@ export default function RequirementList() {
 
         // 添加数据行
         typeData.forEach((item: any, index: number) => {
+          // 如果有前置删除需求，类型显示"导入（先删除）"
+          const typeText = item.has_prerequisite_delete ? '导入（先删除）' : typeConfig[type].text;
           const row = worksheet.addRow([
             index + 1,
             item.submitter_name,
             dayjs(item.submit_time).format('YYYY-MM-DD HH:mm:ss'),
             dayjs(item.ucm_change_date).format('YYYY-MM-DD'),
-            typeConfig[type].text,
+            typeText,
             ...columns.map(col => item.requirement_data_dict?.[col.name] || '-')
           ]);
 
@@ -857,7 +859,10 @@ export default function RequirementList() {
       },
     },
     // 动态列（根据选中的类型对应的模板配置）
-    ...(templateColumnsByType[selectedType] || []).map((col: any) => {
+    // 过滤掉等待通知相关的列（已在状态列显示）
+    ...(templateColumnsByType[selectedType] || []).filter((col: any) =>
+      !col.name.includes('等待通知') && !col.name.includes('等待说明')
+    ).map((col: any) => {
       // 当selectedType为'delete'时，使用'import'的列配置，但表头色调保持红色
       const displayType = selectedType === 'delete' ? 'delete' : selectedType;
       return {
@@ -897,43 +902,6 @@ export default function RequirementList() {
             title="编辑"
             onClick={() => handleEdit(record)}
           />
-          {record.status === 'waiting_notification' && !record.notification_received && (
-            <Tooltip title="标记收到通知">
-              <Button
-                size="small"
-                type="text"
-                icon={<BellOutlined style={{ color: '#fa8c16' }} />}
-                title="收到通知"
-                onClick={() => handleNotificationReceived(record.id)}
-              />
-            </Tooltip>
-          )}
-          {(record.status === 'pending' || record.status === 'processing') && (
-            record.has_prerequisite_delete ? (
-              <Tooltip title="需先完成关联的删除需求">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<CheckCircleOutlined style={{ color: '#d9d9d9' }} />}
-                  disabled
-                />
-              </Tooltip>
-            ) : (
-              <Popconfirm
-                title="确认完成?"
-                onConfirm={() => handleComplete(record.id)}
-                okText="确定"
-                cancelText="取消"
-              >
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                  title="完成"
-                />
-              </Popconfirm>
-            )
-          )}
           <Popconfirm
             title="确认删除?"
             onConfirm={() => handleDelete(record.id)}
@@ -948,6 +916,49 @@ export default function RequirementList() {
               title="删除"
             />
           </Popconfirm>
+          {record.status === 'waiting_notification' && !record.notification_received && (
+            <>
+              <Divider type="vertical" style={{ backgroundColor: '#1890ff', margin: '0 4px' }} />
+              <Tooltip title="标记收到通知">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<BellOutlined style={{ color: '#fa8c16' }} />}
+                  title="收到通知"
+                  onClick={() => handleNotificationReceived(record.id)}
+                />
+              </Tooltip>
+            </>
+          )}
+          {(record.status === 'pending' || record.status === 'processing') && (
+            <>
+              <Divider type="vertical" style={{ backgroundColor: '#1890ff', margin: '0 4px' }} />
+              {record.has_prerequisite_delete ? (
+                <Tooltip title="需先完成关联的删除需求">
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CheckCircleOutlined style={{ color: '#d9d9d9' }} />}
+                    disabled
+                  />
+                </Tooltip>
+              ) : (
+                <Popconfirm
+                  title="确认完成?"
+                  onConfirm={() => handleComplete(record.id)}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                    title="完成"
+                  />
+                </Popconfirm>
+              )}
+            </>
+          )}
         </Space>
       ),
     },
