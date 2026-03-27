@@ -981,6 +981,75 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
         requirement.save()
         return Response({'success': True, 'status': requirement.status})
 
+    @action(detail=False, methods=['post'])
+    def batch_mark_notification_received(self, request):
+        """批量标记收到通知（按日期+类型+等待说明分组）"""
+        ucm_change_date = request.data.get('ucm_change_date')
+        requirement_type = request.data.get('requirement_type')
+        notification_note = request.data.get('notification_note', '')
+        
+        # 构建查询条件
+        queryset = UCMRequirement.objects.filter(
+            status='waiting_notification',
+            notification_received=False
+        )
+        if ucm_change_date:
+            queryset = queryset.filter(ucm_change_date=ucm_change_date)
+        if requirement_type:
+            queryset = queryset.filter(requirement_type=requirement_type)
+        # notification_note 为空字符串时也要精确匹配
+        queryset = queryset.filter(notification_note=notification_note)
+        
+        # 批量更新
+        count = queryset.update(
+            notification_received=True,
+            notification_receive_time=timezone.now(),
+            status='pending'
+        )
+        
+        return Response({'success': True, 'updated_count': count})
+
+    @action(detail=False, methods=['get'])
+    def notification_groups(self, request):
+        """获取等待通知的分组列表（按日期+类型+等待说明分组）"""
+        from django.db.models import Count
+        
+        # 获取过滤参数
+        ucm_change_date = request.query_params.get('ucm_change_date')
+        requirement_type = request.query_params.get('requirement_type')
+        
+        # 查询所有待通知的需求，按分组字段统计数量
+        queryset = UCMRequirement.objects.filter(
+            status='waiting_notification',
+            notification_received=False
+        )
+        
+        # 按参数过滤
+        if ucm_change_date:
+            queryset = queryset.filter(ucm_change_date=ucm_change_date)
+        if requirement_type:
+            queryset = queryset.filter(requirement_type=requirement_type)
+        
+        groups = queryset.values('ucm_change_date', 'requirement_type', 'notification_note').annotate(
+            count=Count('id')
+        ).order_by('ucm_change_date', 'requirement_type')
+        
+        # 转换为列表并添加中文显示
+        result = []
+        for group in groups:
+            type_display = dict(UCMRequirement.REQUIREMENT_TYPES).get(
+                group['requirement_type'], group['requirement_type']
+            )
+            result.append({
+                'ucm_change_date': group['ucm_change_date'].strftime('%Y-%m-%d') if group['ucm_change_date'] else None,
+                'requirement_type': group['requirement_type'],
+                'requirement_type_display': type_display,
+                'notification_note': group['notification_note'] or '',
+                'count': group['count']
+            })
+        
+        return Response(result)
+
     @action(detail=False, methods=['get'])
     def weekly_dates(self, request):
         """获取指定周的周三、周六日期列表"""

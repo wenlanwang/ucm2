@@ -43,6 +43,14 @@ class UCMRequirementSerializer(serializers.ModelSerializer):
         model = UCMRequirement
         fields = '__all__'
 
+    def validate(self, data):
+        """验证等待通知字段：勾选等待通知时，等待说明必填"""
+        if data.get('wait_notification') and not data.get('notification_note', '').strip():
+            raise serializers.ValidationError({
+                'notification_note': '勾选等待通知时，等待说明为必填项'
+            })
+        return data
+
     def get_requirement_data_dict(self, obj):
         """返回解析后的 requirement_data 字典"""
         return obj.get_requirement_data_dict()

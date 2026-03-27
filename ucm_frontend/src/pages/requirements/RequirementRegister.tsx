@@ -946,6 +946,23 @@ export default function RequirementRegister() {
       return;
     }
     
+    // 验证等待通知设置：勾选等待通知时，等待说明必填
+    if (activeTab === 'delete_then_add') {
+      if (deleteThenAddSettings.deleteWaitNotification && !deleteThenAddSettings.deleteNotificationNote.trim()) {
+        message.warning('删除操作勾选了等待通知，请填写等待说明');
+        return;
+      }
+      if (deleteThenAddSettings.addWaitNotification && !deleteThenAddSettings.addNotificationNote.trim()) {
+        message.warning('新增操作勾选了等待通知，请填写等待说明');
+        return;
+      }
+    } else {
+      if (waitNotificationSettings.waitNotification && !waitNotificationSettings.notificationNote.trim()) {
+        message.warning('勾选了等待通知，请填写等待说明');
+        return;
+      }
+    }
+    
     setSubmitting(true);
     try {
       // 检查重复
@@ -1360,15 +1377,19 @@ export default function RequirementRegister() {
                       等待通知
                     </Checkbox>
                     {deleteThenAddSettings.deleteWaitNotification && (
-                      <Input
-                        placeholder="等待说明"
-                        value={deleteThenAddSettings.deleteNotificationNote}
-                        onChange={(e) => setDeleteThenAddSettings(prev => ({
-                          ...prev,
-                          deleteNotificationNote: e.target.value
-                        }))}
-                        style={{ width: 180 }}
-                      />
+                      <>
+                        <span style={{ color: '#ff4d4f', marginRight: 4 }}>*</span>
+                        <Input
+                          placeholder="等待说明（必填）"
+                          value={deleteThenAddSettings.deleteNotificationNote}
+                          onChange={(e) => setDeleteThenAddSettings(prev => ({
+                            ...prev,
+                            deleteNotificationNote: e.target.value
+                          }))}
+                          status={!deleteThenAddSettings.deleteNotificationNote.trim() ? 'error' : undefined}
+                          style={{ width: 180 }}
+                        />
+                      </>
                     )}
                   </Space>
                   {/* 新增操作 */}
@@ -1384,15 +1405,19 @@ export default function RequirementRegister() {
                       等待通知
                     </Checkbox>
                     {deleteThenAddSettings.addWaitNotification && (
-                      <Input
-                        placeholder="等待说明"
-                        value={deleteThenAddSettings.addNotificationNote}
-                        onChange={(e) => setDeleteThenAddSettings(prev => ({
-                          ...prev,
-                          addNotificationNote: e.target.value
-                        }))}
-                        style={{ width: 180 }}
-                      />
+                      <>
+                        <span style={{ color: '#ff4d4f', marginRight: 4 }}>*</span>
+                        <Input
+                          placeholder="等待说明（必填）"
+                          value={deleteThenAddSettings.addNotificationNote}
+                          onChange={(e) => setDeleteThenAddSettings(prev => ({
+                            ...prev,
+                            addNotificationNote: e.target.value
+                          }))}
+                          status={!deleteThenAddSettings.addNotificationNote.trim() ? 'error' : undefined}
+                          style={{ width: 180 }}
+                        />
+                      </>
                     )}
                   </Space>
                 </div>
@@ -1409,15 +1434,22 @@ export default function RequirementRegister() {
                     等待通知
                   </Checkbox>
                   {waitNotificationSettings.waitNotification && (
-                    <Input
-                      placeholder="请输入等待说明"
-                      value={waitNotificationSettings.notificationNote}
-                      onChange={(e) => setWaitNotificationSettings(prev => ({
-                        ...prev,
-                        notificationNote: e.target.value
-                      }))}
-                      style={{ width: 300 }}
-                    />
+                    <>
+                      <span style={{ color: '#ff4d4f', marginRight: 4 }}>*</span>
+                      <Input
+                        placeholder="请输入等待说明（必填）"
+                        value={waitNotificationSettings.notificationNote}
+                        onChange={(e) => setWaitNotificationSettings(prev => ({
+                          ...prev,
+                          notificationNote: e.target.value
+                        }))}
+                        status={!waitNotificationSettings.notificationNote.trim() ? 'error' : undefined}
+                        style={{ width: 300 }}
+                      />
+                      {!waitNotificationSettings.notificationNote.trim() && (
+                        <span style={{ color: '#ff4d4f', fontSize: 12 }}>请填写等待说明</span>
+                      )}
+                    </>
                   )}
                 </Space>
               ),

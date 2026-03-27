@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip, Divider } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, EditOutlined, BellOutlined, NotificationOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, BellOutlined, NotificationOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import { useSearchParams } from 'react-router-dom';
@@ -48,6 +48,15 @@ interface DateStatistics {
   modify: { count: number; pending: number; processed: number };
 }
 
+interface NotificationGroup {
+  ucm_change_date: string;
+  requirement_type: string;
+  requirement_type_display: string;
+  notification_note: string;
+  count: number;
+  confirmed?: boolean;  // 本地状态：是否已确认
+}
+
 export default function RequirementList() {
   dayjs.locale('zh-cn');
   const [searchParams] = useSearchParams();
@@ -88,6 +97,9 @@ export default function RequirementList() {
   // 校验所需数据
   const [vendorVersionData, setVendorVersionData] = useState<any[]>([]);
   const [columnOptions, setColumnOptions] = useState<Record<string, string[]>>({});
+
+  // 待通知分组状态
+  const [notificationGroups, setNotificationGroups] = useState<NotificationGroup[]>([]);
 
   const requirementTypeText: Record<string, string> = {
     import: '导入',
@@ -211,6 +223,7 @@ export default function RequirementList() {
   useEffect(() => {
     if (selectedDate && selectedType) {
       loadData();
+      loadNotificationGroups();
     }
   }, [selectedDate, selectedType]);
 
@@ -408,14 +421,51 @@ export default function RequirementList() {
     }
   };
 
-  const handleEdit = (record: Requirement) => {
-    setEditingRecord(record);
-    setEditModalVisible(true);
-    // 填充表单数据
-    editForm.setFieldsValue({
-      ...record,
-      ...record.requirement_data_dict
-    });
+  // 加载待通知分组列表（按日期+类型过滤）
+  const loadNotificationGroups = async () => {
+    if (!selectedDate) {
+      setNotificationGroups([]);
+      return;
+    }
+    try {
+      const params = new URLSearchParams();
+      params.append('ucm_change_date', selectedDate);
+      params.append('requirement_type', selectedType);
+      const response = await api.get(`/requirements/notification_groups/?${params.toString()}`);
+      setNotificationGroups(response.data);
+    } catch (error) {
+      console.error('加载通知分组失败', error);
+      setNotificationGroups([]);
+    }
+  };
+
+  // 批量标记收到通知
+  const handleBatchMarkNotification = async (group: NotificationGroup) => {
+    if (group.confirmed) return; // 已确认的不重复操作
+    
+    try {
+      const response = await api.post('/requirements/batch_mark_notification_received/', {
+        ucm_change_date: group.ucm_change_date,
+        requirement_type: group.requirement_type,
+        notification_note: group.notification_note
+      });
+      message.success(`已标记 ${response.data.updated_count} 条需求收到通知`);
+      
+      // 在本地更新分组状态为已确认，而不是重新加载
+      setNotificationGroups(prev => prev.map(g => 
+        g.ucm_change_date === group.ucm_change_date &&
+        g.requirement_type === group.requirement_type &&
+        g.notification_note === group.notification_note
+          ? { ...g, confirmed: true }
+          : g
+      ));
+      
+      // 刷新需求列表和统计
+      loadData();
+      if (selectedDate) loadDateStatistics(selectedDate);
+    } catch (error) {
+      message.error('操作失败');
+    }
   };
 
   const handleEditSubmit = async () => {
@@ -895,13 +945,6 @@ export default function RequirementList() {
       fixed: 'right' as const,
       render: (_: any, record: Requirement) => (
         <Space size="small">
-          <Button
-            size="small"
-            type="text"
-            icon={<EditOutlined />}
-            title="编辑"
-            onClick={() => handleEdit(record)}
-          />
           <Popconfirm
             title="确认删除?"
             onConfirm={() => handleDelete(record.id)}
@@ -1143,6 +1186,68 @@ export default function RequirementList() {
             </div>
           </div>
         </div>
+
+        {/* 待通知分组 - 仅在选中日期+类型且有分组时显示 */}
+        {selectedDate && notificationGroups.length > 0 && (
+          <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#fffbe6', borderRadius: 4, border: '1px solid #ffe58f' }}>
+            <div style={{ marginBottom: 8, fontWeight: 'bold', color: '#d46b08', fontSize: 13 }}>
+              <BellOutlined style={{ marginRight: 4 }} />
+              待通知确认 ({requirementTypeText[selectedType]})
+            </div>
+            <Space wrap size={[8, 8]}>
+              {notificationGroups.map((group, idx) => {
+                if (group.confirmed) {
+                  // 已确认状态：灰色，不可点击
+                  return (
+                    <Tag 
+                      key={idx}
+                      color="default"
+                      style={{ 
+                        padding: '4px 10px', 
+                        cursor: 'default',
+                        fontSize: 12,
+                        borderRadius: 4,
+                        backgroundColor: '#f5f5f5',
+                        color: '#8c8c8c'
+                      }}
+                    >
+                      <CheckCircleOutlined style={{ marginRight: 4, color: '#52c41a' }} />
+                      {group.notification_note || '(无说明)'} 
+                      <span style={{ marginLeft: 4 }}>×{group.count}</span>
+                      <span style={{ marginLeft: 6, color: '#52c41a' }}>已确认</span>
+                    </Tag>
+                  );
+                }
+                
+                // 未确认状态：橙色，可点击确认
+                return (
+                  <Popconfirm
+                    key={idx}
+                    title={`确认标记 ${group.count} 条需求收到通知?`}
+                    description={group.notification_note || '无等待说明'}
+                    onConfirm={() => handleBatchMarkNotification(group)}
+                    okText="确定"
+                    cancelText="取消"
+                  >
+                    <Tag 
+                      color="warning"
+                      style={{ 
+                        padding: '4px 10px', 
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        borderRadius: 4
+                      }}
+                    >
+                      {group.notification_note || '(无说明)'} 
+                      <span style={{ marginLeft: 4, fontWeight: 'bold' }}>×{group.count}</span>
+                      <CheckCircleOutlined style={{ marginLeft: 6, color: '#52c41a' }} />
+                    </Tag>
+                  </Popconfirm>
+                );
+              })}
+            </Space>
+          </div>
+        )}
 
         {/* 当前选择提示 */}
         {selectedDate && (
