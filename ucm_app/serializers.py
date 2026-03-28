@@ -9,7 +9,7 @@ from .models import (
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'is_staff']
+        fields = ['id', 'username', 'email', 'is_staff', 'first_name', 'last_name']
 
 
 class ManufacturerVersionInfoSerializer(serializers.ModelSerializer):
@@ -31,13 +31,27 @@ class UCMDeviceInventorySerializer(serializers.ModelSerializer):
 
 
 class UCMRequirementSerializer(serializers.ModelSerializer):
-    submitter_name = serializers.CharField(source='submitter.username', read_only=True)
-    processor_name = serializers.CharField(source='processor.username', read_only=True, allow_null=True)
+    submitter_name = serializers.SerializerMethodField()
+    processor_name = serializers.SerializerMethodField()
     requirement_data_dict = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     requirement_type_display = serializers.CharField(source='get_requirement_type_display', read_only=True)
     related_requirement_info = serializers.SerializerMethodField()
     has_prerequisite_delete = serializers.SerializerMethodField()
+
+    def get_submitter_name(self, obj):
+        """获取提交人姓名，优先显示姓名，无姓名则显示账号"""
+        if obj.submitter:
+            full_name = f"{obj.submitter.first_name}{obj.submitter.last_name}".strip()
+            return full_name if full_name else obj.submitter.username
+        return None
+
+    def get_processor_name(self, obj):
+        """获取处理人姓名，优先显示姓名，无姓名则显示账号"""
+        if obj.processor:
+            full_name = f"{obj.processor.first_name}{obj.processor.last_name}".strip()
+            return full_name if full_name else obj.processor.username
+        return None
 
     class Meta:
         model = UCMRequirement

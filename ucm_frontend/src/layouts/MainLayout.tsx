@@ -141,7 +141,7 @@ export default function MainLayout() {
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
               <Avatar icon={<UserOutlined />} style={{ marginRight: 8 }} />
-              <span>{user?.username}</span>
+              <span>{user?.first_name && user?.last_name ? `${user.first_name}${user.last_name}` : user?.first_name || user?.last_name || user?.username}</span>
             </div>
           </Dropdown>
         </Header>
