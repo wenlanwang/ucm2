@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag, Popconfirm, Checkbox, Collapse, Input } from 'antd';
-import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined, NotificationOutlined } from '@ant-design/icons';
+import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined, NotificationOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
@@ -1027,8 +1027,7 @@ export default function RequirementRegister() {
           const params = new URLSearchParams();
           params.set('ucm_change_date', ucmChangeDate?.format('YYYY-MM-DD') || '');
           params.set('requirement_type', activeTab === 'delete_then_add' ? 'delete' : activeTab);
-          params.set('submitter', user?.username || '');
-          
+
           if (response.data.submitted_ids && response.data.submitted_ids.length > 0) {
             params.set('highlight_ids', response.data.submitted_ids.join(','));
           }
@@ -1182,7 +1181,16 @@ export default function RequirementRegister() {
   
   return (
     <div>
-      <h1 style={{ marginBottom: 24 }}>需求登记</h1>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
+        <h1 style={{ margin: 0 }}>需求登记</h1>
+        <Button 
+          icon={<UnorderedListOutlined />}
+          style={{ marginLeft: 20 }}
+          onClick={() => navigate('/requirements/list')}
+        >
+          需求列表
+        </Button>
+      </div>
       
       <Card>
         {/* 顶部控制栏 */}

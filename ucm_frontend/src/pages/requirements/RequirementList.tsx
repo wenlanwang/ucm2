@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip, Divider } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, BellOutlined, NotificationOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, BellOutlined, NotificationOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import api from '../../services/api';
@@ -60,6 +60,7 @@ interface NotificationGroup {
 export default function RequirementList() {
   dayjs.locale('zh-cn');
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [data, setData] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
@@ -941,66 +942,46 @@ export default function RequirementList() {
   const rightFixedColumns = [
     {
       title: '操作',
-      width: 150,
+      width: 100,
       fixed: 'right' as const,
       render: (_: any, record: Requirement) => (
         <Space size="small">
-          <Popconfirm
-            title="确认删除?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button
-              size="small"
-              danger
-              type="text"
-              icon={<DeleteOutlined />}
-              title="删除"
-            />
-          </Popconfirm>
           {record.status === 'waiting_notification' && !record.notification_received && (
-            <>
-              <Divider type="vertical" style={{ backgroundColor: '#1890ff', margin: '0 4px' }} />
-              <Tooltip title="标记收到通知">
+            <Tooltip title="标记收到通知">
+              <Button
+                size="small"
+                type="text"
+                icon={<BellOutlined style={{ color: '#fa8c16' }} />}
+                title="收到通知"
+                onClick={() => handleNotificationReceived(record.id)}
+              />
+            </Tooltip>
+          )}
+          {(record.status === 'pending' || record.status === 'processing') && (
+            record.has_prerequisite_delete ? (
+              <Tooltip title="需先完成关联的删除需求">
                 <Button
                   size="small"
                   type="text"
-                  icon={<BellOutlined style={{ color: '#fa8c16' }} />}
-                  title="收到通知"
-                  onClick={() => handleNotificationReceived(record.id)}
+                  icon={<CheckCircleOutlined style={{ color: '#d9d9d9' }} />}
+                  disabled
                 />
               </Tooltip>
-            </>
-          )}
-          {(record.status === 'pending' || record.status === 'processing') && (
-            <>
-              <Divider type="vertical" style={{ backgroundColor: '#1890ff', margin: '0 4px' }} />
-              {record.has_prerequisite_delete ? (
-                <Tooltip title="需先完成关联的删除需求">
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<CheckCircleOutlined style={{ color: '#d9d9d9' }} />}
-                    disabled
-                  />
-                </Tooltip>
-              ) : (
-                <Popconfirm
-                  title="确认完成?"
-                  onConfirm={() => handleComplete(record.id)}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                    title="完成"
-                  />
-                </Popconfirm>
-              )}
-            </>
+            ) : (
+              <Popconfirm
+                title="确认完成?"
+                onConfirm={() => handleComplete(record.id)}
+                okText="确定"
+                cancelText="取消"
+              >
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                  title="完成"
+                />
+              </Popconfirm>
+            )
           )}
         </Space>
       ),
@@ -1017,15 +998,19 @@ export default function RequirementList() {
         return (
           <Space direction="vertical" size={0}>
             <Tag color={color}>{displayText}</Tag>
-            {record.wait_notification && !record.notification_received && (
-              <Tooltip title={record.notification_note || '等待通知'}>
-                <Tag color="warning" style={{ fontSize: '10px' }}>
-                  <NotificationOutlined /> {record.notification_note ? record.notification_note.substring(0, 6) + '...' : '等待通知'}
+            {record.wait_notification && record.notification_note && (
+              record.notification_received ? (
+                <Tag color="success" style={{ fontSize: '10px' }}>
+                  <CheckCircleOutlined style={{ marginRight: 4 }} />
+                  {record.notification_note}
                 </Tag>
-              </Tooltip>
-            )}
-            {record.notification_received && (
-              <Tag color="success" style={{ fontSize: '10px' }}>已收到通知</Tag>
+              ) : (
+                <Tooltip title={record.notification_note}>
+                  <Tag color="warning" style={{ fontSize: '10px' }}>
+                    <NotificationOutlined /> {record.notification_note.substring(0, 6) + '...'}
+                  </Tag>
+                </Tooltip>
+              )
             )}
           </Space>
         );
@@ -1087,9 +1072,40 @@ export default function RequirementList() {
   // 获取所有唯一的需求人列表
   const uniqueSubmitters = Array.from(new Set(data.map(item => item.submitter_name))).sort();
 
+  // 计算各状态数量
+  const statusCounts = {
+    all: data.length,
+    waiting_notification: data.filter(item => item.status === 'waiting_notification').length,
+    pending: data.filter(item => item.status === 'pending').length,
+    processing: data.filter(item => item.status === 'processing').length,
+    processed: data.filter(item => item.status === 'processed').length,
+  };
+
   return (
     <div>
-      <h1 style={{ marginBottom: 24 }}>需求列表</h1>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
+        <h1 style={{ margin: 0 }}>需求列表</h1>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />}
+          style={{ marginLeft: 20 }}
+          onClick={() => navigate('/requirements/register')}
+        >
+          需求登记
+        </Button>
+        {selectedDate && (
+          <span style={{ 
+            marginLeft: 20, 
+            padding: '6px 12px', 
+            backgroundColor: '#f5f5f5', 
+            borderRadius: 4, 
+            fontSize: 13, 
+            color: '#666' 
+          }}>
+            当前选中：{dayjs(selectedDate).format('YYYY-MM-DD（ddd）')} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
+          </span>
+        )}
+      </div>
 
       <Card>
         {/* 日期选择和类型统计 */}
@@ -1187,75 +1203,6 @@ export default function RequirementList() {
           </div>
         </div>
 
-        {/* 待通知分组 - 仅在选中日期+类型且有分组时显示 */}
-        {selectedDate && notificationGroups.length > 0 && (
-          <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#fffbe6', borderRadius: 4, border: '1px solid #ffe58f' }}>
-            <div style={{ marginBottom: 8, fontWeight: 'bold', color: '#d46b08', fontSize: 13 }}>
-              <BellOutlined style={{ marginRight: 4 }} />
-              待通知确认 ({requirementTypeText[selectedType]})
-            </div>
-            <Space wrap size={[8, 8]}>
-              {notificationGroups.map((group, idx) => {
-                if (group.confirmed) {
-                  // 已确认状态：灰色，不可点击
-                  return (
-                    <Tag 
-                      key={idx}
-                      color="default"
-                      style={{ 
-                        padding: '4px 10px', 
-                        cursor: 'default',
-                        fontSize: 12,
-                        borderRadius: 4,
-                        backgroundColor: '#f5f5f5',
-                        color: '#8c8c8c'
-                      }}
-                    >
-                      <CheckCircleOutlined style={{ marginRight: 4, color: '#52c41a' }} />
-                      {group.notification_note || '(无说明)'} 
-                      <span style={{ marginLeft: 4 }}>×{group.count}</span>
-                      <span style={{ marginLeft: 6, color: '#52c41a' }}>已确认</span>
-                    </Tag>
-                  );
-                }
-                
-                // 未确认状态：橙色，可点击确认
-                return (
-                  <Popconfirm
-                    key={idx}
-                    title={`确认标记 ${group.count} 条需求收到通知?`}
-                    description={group.notification_note || '无等待说明'}
-                    onConfirm={() => handleBatchMarkNotification(group)}
-                    okText="确定"
-                    cancelText="取消"
-                  >
-                    <Tag 
-                      color="warning"
-                      style={{ 
-                        padding: '4px 10px', 
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        borderRadius: 4
-                      }}
-                    >
-                      {group.notification_note || '(无说明)'} 
-                      <span style={{ marginLeft: 4, fontWeight: 'bold' }}>×{group.count}</span>
-                      <CheckCircleOutlined style={{ marginLeft: 6, color: '#52c41a' }} />
-                    </Tag>
-                  </Popconfirm>
-                );
-              })}
-            </Space>
-          </div>
-        )}
-
-        {/* 当前选择提示 */}
-        {selectedDate && (
-          <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
-            当前选中：{dayjs(selectedDate).format('YYYY-MM-DD（ddd）')} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
-          </div>
-        )}
-
         {/* 批量操作 */}
         <div style={{ marginBottom: 16 }}>
           <Space>
@@ -1279,7 +1226,7 @@ export default function RequirementList() {
 
         {/* 筛选功能 */}
         <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 4 }}>
-          <Space wrap>
+          <Space wrap size={[16, 12]}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 14, color: '#666' }}>需求人:</span>
               <select
@@ -1307,11 +1254,11 @@ export default function RequirementList() {
                 }}
                 style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #d9d9d9', minWidth: 120 }}
               >
-                <option value="all">全部</option>
-                <option value="waiting_notification">待通知</option>
-                <option value="pending">待处理</option>
-                <option value="processing">处理中</option>
-                <option value="processed">已处理</option>
+                <option value="all">全部({statusCounts.all})</option>
+                <option value="waiting_notification">待通知({statusCounts.waiting_notification})</option>
+                <option value="pending">待处理({statusCounts.pending})</option>
+                <option value="processing">处理中({statusCounts.processing})</option>
+                <option value="processed">已处理({statusCounts.processed})</option>
               </select>
             </div>
 
@@ -1342,6 +1289,65 @@ export default function RequirementList() {
                 清除筛选
               </Button>
             ) : null}
+
+            {/* 待通知确认 - 紧跟清除筛选后面 */}
+            {selectedDate && notificationGroups.length > 0 && (
+              <>
+                <span style={{ fontSize: 12, color: '#d46b08', fontWeight: 'bold' }}>
+                  <BellOutlined style={{ marginRight: 4 }} />
+                  待通知确认：
+                </span>
+                {notificationGroups.map((group, idx) => {
+                  if (group.confirmed) {
+                    return (
+                      <Tag 
+                        key={idx}
+                        color="default"
+                        style={{ 
+                          padding: '4px 10px', 
+                          cursor: 'default',
+                          fontSize: 12,
+                          borderRadius: 4,
+                          backgroundColor: '#f5f5f5',
+                          color: '#8c8c8c'
+                        }}
+                      >
+                        <CheckCircleOutlined style={{ marginRight: 4, color: '#52c41a' }} />
+                        {group.notification_note || '(无说明)'} 
+                        <span style={{ marginLeft: 4 }}>×{group.count}</span>
+                        <span style={{ marginLeft: 6, color: '#52c41a' }}>已收到通知</span>
+                      </Tag>
+                    );
+                  }
+                  
+                  return (
+                    <Tooltip key={idx} title="点击确认收到通知">
+                      <Popconfirm
+                        title={`确认标记 ${group.count} 条需求收到通知?`}
+                        description={group.notification_note || '无等待说明'}
+                        onConfirm={() => handleBatchMarkNotification(group)}
+                        okText="确定"
+                        cancelText="取消"
+                      >
+                        <Tag 
+                          color="warning"
+                          style={{ 
+                            padding: '4px 10px', 
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            borderRadius: 4
+                          }}
+                        >
+                          {group.notification_note || '(无说明)'} 
+                          <span style={{ marginLeft: 4, fontWeight: 'bold' }}>×{group.count}</span>
+                          <CheckCircleOutlined style={{ marginLeft: 6, color: '#52c41a' }} />
+                        </Tag>
+                      </Popconfirm>
+                    </Tooltip>
+                  );
+                })}
+              </>
+            )}
           </Space>
 
           {/* 筛选结果提示 */}
