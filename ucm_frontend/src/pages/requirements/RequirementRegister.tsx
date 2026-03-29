@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Card, Button, message, Space, Tabs, DatePicker, Modal, Table, Tooltip, Tag, Popconfirm, Checkbox, Collapse, Input } from 'antd';
-import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined, NotificationOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { PlusOutlined, DownloadOutlined, CheckCircleOutlined, DeleteOutlined, CopyOutlined, UploadOutlined, ExclamationCircleOutlined, NotificationOutlined, OrderedListOutlined } from '@ant-design/icons';
 import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
 import EditableCell from '../../components/EditableCell';
+import EmbedNavigation from '../../components/EmbedNavigation';
 
 interface ColumnDefinition {
   name: string;
@@ -43,10 +44,13 @@ const isWaitNotificationColumn = (columnName: string): boolean => {
   return waitColumns.includes(columnName);
 };
 
-export default function RequirementRegister() {
+export default function RequirementRegister({ embedMode }: { embedMode?: boolean }) {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  
+
+  // 嵌入模式下的导航路径
+  const getNavPath = (path: string) => embedMode ? `/embed${path}` : path;
+
   // 状态管理
   const [activeTab, setActiveTab] = useState<'import' | 'modify' | 'delete' | 'delete_then_add'>('import');
   const [ucmChangeDate, setUcmChangeDate] = useState<dayjs.Dayjs | null>(null);
@@ -1028,11 +1032,7 @@ export default function RequirementRegister() {
           params.set('ucm_change_date', ucmChangeDate?.format('YYYY-MM-DD') || '');
           params.set('requirement_type', activeTab === 'delete_then_add' ? 'delete' : activeTab);
 
-          if (response.data.submitted_ids && response.data.submitted_ids.length > 0) {
-            params.set('highlight_ids', response.data.submitted_ids.join(','));
-          }
-
-          navigate(`/requirements/list?${params.toString()}`);
+          navigate(`${getNavPath('/requirements/list')}?${params.toString()}`);
         }
       });
     } catch (error: any) {
@@ -1180,16 +1180,20 @@ export default function RequirementRegister() {
   }, [templateColumns, handleCopyRow, handleDeleteRow, renderEditableCell, currentPage, pageSize, activeTab]);
   
   return (
-    <div>
+    <div style={{ padding: embedMode ? 16 : 0 }}>
+      {embedMode && <EmbedNavigation embedMode />}
+      
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>需求登记</h1>
-        <Button 
-          icon={<UnorderedListOutlined />}
-          style={{ marginLeft: 20 }}
-          onClick={() => navigate('/requirements/list')}
-        >
-          需求列表
-        </Button>
+        {!embedMode && (
+          <Button
+            icon={<OrderedListOutlined />}
+            style={{ marginLeft: 20 }}
+            onClick={() => navigate(getNavPath('/requirements/list'))}
+          >
+            需求列表
+          </Button>
+        )}
       </div>
       
       <Card>

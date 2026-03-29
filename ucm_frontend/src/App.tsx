@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams, Outlet } from 'react-router-dom';
 import { ConfigProvider, Spin, Result } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { useAuthStore } from './store/useAuthStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 // 管理员路由保护组件
 function AdminRoute({ children }: { children: React.ReactNode }) {
@@ -24,6 +24,51 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
+
+// 嵌入模式布局组件（无侧边栏、无顶部导航）
+function EmbedLayout() {
+  const [searchParams] = useSearchParams();
+  const { isAuthenticated, embedLogin } = useAuthStore();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const sessionId = searchParams.get('session_id');
+    if (sessionId) {
+      // 有 session_id 参数，尝试自动认证
+      embedLogin(sessionId).then(() => {
+        setLoading(false);
+      });
+    } else {
+      // 没有 session_id，检查是否已登录
+      setLoading(false);
+    }
+  }, [searchParams, embedLogin]);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <Spin size="large" tip="正在验证登录状态..." />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Result
+        status="401"
+        title="未登录"
+        subTitle="请通过父网站访问此页面"
+      />
+    );
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+      <Outlet />
+    </div>
+  );
+}
+
 import Login from './pages/Login';
 import MainLayout from './layouts/MainLayout';
 import Dashboard from './pages/Dashboard';
@@ -91,6 +136,15 @@ function App() {
               <Route path="deadline-settings" element={<AdminRoute><ErrorBoundary><DeadlineSettings /></ErrorBoundary></AdminRoute>} />
             </Route>
             <Route path="settings" element={<ErrorBoundary><ProfileSettings /></ErrorBoundary>} />
+          </Route>
+
+          {/* 嵌入模式路由（无侧边栏、无顶部导航） */}
+          <Route path="/embed" element={<EmbedLayout />}>
+            <Route path="requirements">
+              <Route index element={<Dashboard embedMode />} />
+              <Route path="register" element={<RequirementRegister key="embed-register" embedMode />} />
+              <Route path="list" element={<RequirementList embedMode />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>

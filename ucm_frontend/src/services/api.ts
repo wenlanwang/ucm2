@@ -79,6 +79,28 @@ export const ssoLogout = async (): Promise<{ success: boolean }> => {
   return response.data;
 };
 
+// ========== 首页统计 API ==========
+
+export interface DashboardStatistics {
+  wednesday: {
+    date: string;
+    count: number;
+  };
+  saturday: {
+    date: string;
+    count: number;
+  };
+  total: number;
+}
+
+/**
+ * 获取首页统计数据
+ */
+export const getDashboardStatistics = async (): Promise<DashboardStatistics> => {
+  const response = await api.get('/dashboard/statistics/');
+  return response.data;
+};
+
 // ========== 用户管理 API ==========
 
 export interface User {

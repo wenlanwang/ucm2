@@ -1,19 +1,1 @@
 /* App styles */
-
-/* 表格行高亮样式 - 5秒淡出动画 - 使用更强的选择器覆盖Ant Design 5.x的CSS-in-JS */
-.ant-table-wrapper .ant-table-tbody > tr.highlight-row {
-  animation: highlightFadeOut 5s ease-out forwards !important;
-}
-
-.ant-table-wrapper .ant-table-tbody > tr.highlight-row > td {
-  animation: highlightFadeOut 5s ease-out forwards !important;
-}
-
-@keyframes highlightFadeOut {
-  0% {
-    background-color: #e6f7ff !important;
-  }
-  100% {
-    background-color: transparent !important;
-  }
-}

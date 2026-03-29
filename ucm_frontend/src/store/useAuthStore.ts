@@ -21,6 +21,8 @@ interface AuthState {
   login: (username: string, password: string) => Promise<boolean>;
   // SSO 登录
   ssoLogin: () => void;
+  // 嵌入模式登录（通过 session_id 自动认证）
+  embedLogin: (sessionId: string) => Promise<boolean>;
   // 登出（自动判断 SSO/本地）
   logout: () => Promise<void>;
   // 检查认证状态
@@ -65,6 +67,32 @@ export const useAuthStore = create<AuthState>()(
         // 重定向到后端 SSO 登录入口
         // 后端会根据配置重定向到 Mock 或生产 SSO
         window.location.href = '/api/auth/sso/login/';
+      },
+
+      embedLogin: async (sessionId: string) => {
+        try {
+          // 调用后端 SSO 验证接口
+          const response = await fetch(`/api/auth/sso/verify_session/?session_id=${sessionId}`, {
+            credentials: 'include',
+          });
+
+          if (response.ok) {
+            // 验证成功，获取用户信息
+            const userResponse = await fetch('/api/auth/current-user/', {
+              credentials: 'include',
+            });
+
+            if (userResponse.ok) {
+              const user = await userResponse.json();
+              set({ user, isAuthenticated: true });
+              return true;
+            }
+          }
+          return false;
+        } catch (error) {
+          console.error('嵌入模式登录失败:', error);
+          return false;
+        }
       },
 
       logout: async () => {

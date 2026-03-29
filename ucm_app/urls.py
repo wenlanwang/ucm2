@@ -24,6 +24,9 @@ urlpatterns = [
     path('auth/sso/logout/', views.sso_logout, name='sso_logout'),
     path('auth/sso/status/', views.sso_status, name='sso_status'),
     path('tool-portal-config/', views.tool_portal_config, name='tool_portal_config'),
+    
+    # 首页统计
+    path('dashboard/statistics/', views.dashboard_statistics, name='dashboard_statistics'),
 
     # 用户管理路由（仅管理员）
     path('auth/users/', views.get_users, name='get_users'),

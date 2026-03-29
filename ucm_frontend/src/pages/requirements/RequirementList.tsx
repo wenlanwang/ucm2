@@ -7,6 +7,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import api from '../../services/api';
+import EmbedNavigation from '../../components/EmbedNavigation';
 
 interface Requirement {
   id: number;
@@ -57,15 +58,17 @@ interface NotificationGroup {
   confirmed?: boolean;  // 本地状态：是否已确认
 }
 
-export default function RequirementList() {
+export default function RequirementList({ embedMode }: { embedMode?: boolean }) {
   dayjs.locale('zh-cn');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  // 嵌入模式下的导航路径
+  const getNavPath = (path: string) => embedMode ? `/embed${path}` : path;
+
   const [data, setData] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
-  const [highlightIds, setHighlightIds] = useState<number[]>([]);
 
   // 新增状态
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -155,35 +158,10 @@ export default function RequirementList() {
   useEffect(() => {
     console.log('=== URL参数处理 ===');
     console.log('当前URL参数:', Object.fromEntries(searchParams.entries()));
-    
-    // 检查是否有高亮ID参数，只有当有高亮ID时，说明是从需求登记页跳转过来的
-    const highlightIdsParam = searchParams.get('highlight_ids');
-    console.log('highlightIdsParam:', highlightIdsParam);
-
-    if (!highlightIdsParam) {
-      // 如果没有高亮ID，说明是刷新页面或直接访问，不处理URL参数
-      console.log('没有高亮ID参数，跳过');
-      return;
-    }
 
     const dateParam = searchParams.get('ucm_change_date');
     const typeParam = searchParams.get('requirement_type');
     const submitterParam = searchParams.get('submitter');
-
-    // 设置高亮ID
-    if (highlightIdsParam) {
-      const ids = highlightIdsParam.split(',').map(Number).filter(n => !isNaN(n));
-      console.log('高亮ID参数:', highlightIdsParam);
-      console.log('解析后的ID数组:', ids);
-      if (ids.length > 0) {
-        setHighlightIds(ids);
-        console.log('已设置高亮ID:', ids);
-        setTimeout(() => {
-          console.log('5秒后清除高亮ID');
-          setHighlightIds([]);
-        }, 5000);
-      }
-    }
 
     // 设置登记类型
     if (typeParam && ['import', 'modify', 'delete'].includes(typeParam)) {
@@ -262,10 +240,9 @@ export default function RequirementList() {
 
       // 检查是否有 URL 参数中的日期（用于从需求登记页跳转）
       const dateParam = searchParams.get('ucm_change_date');
-      const highlightIdsParam = searchParams.get('highlight_ids');
 
-      // 如果有高亮ID参数，说明是从需求登记页跳转过来的，使用参数日期
-      if (dateParam && highlightIdsParam) {
+      // 如果有日期参数，使用参数日期
+      if (dateParam) {
         setSelectedDate(dateParam);
       } else {
         // 否则按规则选择默认日期（刷新页面或直接访问时）
@@ -613,10 +590,23 @@ export default function RequirementList() {
     }
 
     try {
-      await api.post('/requirements/batch_complete/', {
+      const response = await api.post('/requirements/batch_complete/', {
         requirement_ids: selectedRowKeys
       });
-      message.success('批量完成成功');
+      
+      const { success_count, waiting_count, message: msg } = response.data;
+      
+      // 根据结果显示不同类型的提示
+      if (waiting_count > 0 && success_count === 0) {
+        message.warning(msg);
+      } else if (waiting_count > 0) {
+        message.warning(msg);
+      } else if (success_count > 0) {
+        message.success(msg);
+      } else {
+        message.info(msg);
+      }
+      
       setSelectedRowKeys([]);
       loadData();
       // 重新加载统计
@@ -1082,17 +1072,21 @@ export default function RequirementList() {
   };
 
   return (
-    <div>
+    <div style={{ padding: embedMode ? 16 : 0 }}>
+      {embedMode && <EmbedNavigation embedMode />}
+      
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>需求列表</h1>
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />}
-          style={{ marginLeft: 20 }}
-          onClick={() => navigate('/requirements/register')}
-        >
-          需求登记
-        </Button>
+        {!embedMode && (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            style={{ marginLeft: 20 }}
+            onClick={() => navigate(getNavPath('/requirements/register'))}
+          >
+            需求登记
+          </Button>
+        )}
         {selectedDate && (
           <span style={{ 
             marginLeft: 20, 
@@ -1365,41 +1359,6 @@ export default function RequirementList() {
           rowKey="id"
           size="small"
           scroll={{ x: 'max-content', y: 440 }}
-          rowClassName={(record) => {
-            // 如果该记录ID在高亮列表中，返回高亮样式
-            const isHighlighted = highlightIds.includes(record.id);
-            const className = isHighlighted ? 'highlight-row' : '';
-            console.log('rowClassName调用 - 记录ID:', record.id, 'isHighlighted:', isHighlighted, 'highlightIds:', highlightIds, '返回类名:', className);
-            return className;
-          }}
-          onRow={(record) => {
-            const isHighlighted = highlightIds.includes(record.id);
-            if (!isHighlighted) return {};
-
-            // 直接返回带动画的内联样式
-            const style = {
-              animation: 'highlightFadeOut 5s ease-out forwards',
-            };
-
-            // 动态创建keyframes样式 - 浅蓝色背景渐变消失
-            const keyframes = `
-              @keyframes highlightFadeOut {
-                0% { background-color: #e6f7ff; }
-                100% { background-color: transparent; }
-              }
-            `;
-
-            // 创建或更新style标签
-            let styleTag = document.getElementById('highlight-animation');
-            if (!styleTag) {
-              styleTag = document.createElement('style');
-              styleTag.id = 'highlight-animation';
-              document.head.appendChild(styleTag);
-            }
-            styleTag.textContent = keyframes;
-
-            return { style };
-          }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,

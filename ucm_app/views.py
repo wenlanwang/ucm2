@@ -797,7 +797,14 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             return Response({'error': '请选择要完成的记录'}, 
                           status=status.HTTP_400_BAD_REQUEST)
         
-        count = UCMRequirement.objects.filter(
+        # 统计等待通知状态的记录数
+        waiting_count = UCMRequirement.objects.filter(
+            id__in=requirement_ids,
+            status='waiting_notification'
+        ).count()
+        
+        # 只完成 pending 状态的记录
+        success_count = UCMRequirement.objects.filter(
             id__in=requirement_ids,
             status='pending'
         ).update(
@@ -806,7 +813,19 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
             process_time=timezone.now()
         )
         
-        return Response({'success': True, 'count': count})
+        # 构建提示信息
+        message_parts = []
+        if success_count > 0:
+            message_parts.append(f'成功完成 {success_count} 条')
+        if waiting_count > 0:
+            message_parts.append(f'{waiting_count} 条需等待通知后才能完成')
+        
+        return Response({
+            'success': True,
+            'success_count': success_count,
+            'waiting_count': waiting_count,
+            'message': '，'.join(message_parts) if message_parts else '没有可完成的记录'
+        })
     
     @action(detail=False, methods=['post'])
     def batch_delete(self, request):
@@ -2294,3 +2313,48 @@ def set_user_admin(request, user_id):
     except Exception as e:
         logger.error(f"设置用户管理员状态失败: {str(e)}")
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_statistics(request):
+    """
+    首页统计数据接口
+    
+    返回本周三、本周六的需求登记数量及累计总数
+    """
+    from datetime import timedelta
+    
+    today = datetime.now().date()
+    
+    # Python weekday: 周一=0, 周二=1, 周三=2, 周四=3, 周五=4, 周六=5, 周日=6
+    days_since_monday = today.weekday()
+    
+    # 计算本周三 (weekday=2) 和本周六 (weekday=5)
+    wednesday = today - timedelta(days=days_since_monday - 2)
+    saturday = today - timedelta(days=days_since_monday - 5)
+    
+    # 统计本周三登记数量
+    wed_count = UCMRequirement.objects.filter(
+        submit_time__date=wednesday
+    ).count()
+    
+    # 统计本周六登记数量
+    sat_count = UCMRequirement.objects.filter(
+        submit_time__date=saturday
+    ).count()
+    
+    # 累计总数
+    total_count = UCMRequirement.objects.count()
+    
+    return Response({
+        'wednesday': {
+            'date': wednesday.strftime('%Y年%m月%d日'),
+            'count': wed_count
+        },
+        'saturday': {
+            'date': saturday.strftime('%Y年%m月%d日'),
+            'count': sat_count
+        },
+        'total': total_count
+    })
