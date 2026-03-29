@@ -1,8 +1,29 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin } from 'antd';
+import { ConfigProvider, Spin, Result } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { useAuthStore } from './store/useAuthStore';
 import { useEffect } from 'react';
+
+// 管理员路由保护组件
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
+  }
+
+  if (!user?.is_staff) {
+    return (
+      <Result
+        status="403"
+        title="无权限访问"
+        subTitle="您没有权限访问此页面，请联系管理员"
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
 import Login from './pages/Login';
 import MainLayout from './layouts/MainLayout';
 import Dashboard from './pages/Dashboard';
@@ -13,6 +34,7 @@ import ColumnOptionsManage from './pages/admin/ColumnOptionsManage';
 import InventoryManage from './pages/admin/InventoryManage';
 import TemplateManage from './pages/admin/TemplateManage';
 import DeadlineSettings from './pages/admin/DeadlineSettings';
+import UserManagement from './pages/admin/UserManagement';
 import ProfileSettings from './pages/ProfileSettings';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -61,11 +83,12 @@ function App() {
               <Route path="list" element={<RequirementList />} />
             </Route>
             <Route path="admin">
-              <Route path="manufacturers" element={<ErrorBoundary><ManufacturerManage /></ErrorBoundary>} />
-              <Route path="column-options" element={<ErrorBoundary><ColumnOptionsManage /></ErrorBoundary>} />
-              <Route path="inventory" element={<ErrorBoundary><InventoryManage /></ErrorBoundary>} />
-              <Route path="templates" element={<ErrorBoundary><TemplateManage /></ErrorBoundary>} />
-              <Route path="deadline-settings" element={<ErrorBoundary><DeadlineSettings /></ErrorBoundary>} />
+              <Route path="users" element={<AdminRoute><ErrorBoundary><UserManagement /></ErrorBoundary></AdminRoute>} />
+              <Route path="manufacturers" element={<AdminRoute><ErrorBoundary><ManufacturerManage /></ErrorBoundary></AdminRoute>} />
+              <Route path="column-options" element={<AdminRoute><ErrorBoundary><ColumnOptionsManage /></ErrorBoundary></AdminRoute>} />
+              <Route path="inventory" element={<AdminRoute><ErrorBoundary><InventoryManage /></ErrorBoundary></AdminRoute>} />
+              <Route path="templates" element={<AdminRoute><ErrorBoundary><TemplateManage /></ErrorBoundary></AdminRoute>} />
+              <Route path="deadline-settings" element={<AdminRoute><ErrorBoundary><DeadlineSettings /></ErrorBoundary></AdminRoute>} />
             </Route>
             <Route path="settings" element={<ErrorBoundary><ProfileSettings /></ErrorBoundary>} />
           </Route>

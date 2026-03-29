@@ -1,6 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -2220,3 +2220,77 @@ def tool_portal_config(request):
         'redirect_url': redirect_url,
         'has_sso_session': bool(sso_session_id)
     })
+
+
+# ========== 用户管理视图 ==========
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def get_users(request):
+    """
+    获取用户列表（仅管理员可访问）
+    返回所有用户的 ID、用户名、姓名、邮箱、管理员状态等信息
+    """
+    try:
+        users = User.objects.all().order_by('-is_staff', 'username')
+        user_list = []
+        for user in users:
+            user_list.append({
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+                'is_active': user.is_active,
+                'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S') if user.date_joined else None,
+                'last_login': user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else None,
+            })
+        return Response(user_list)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def set_user_admin(request, user_id):
+    """
+    设置/取消用户管理员状态（仅管理员可访问）
+    
+    请求体参数:
+        is_staff: bool - 是否设为管理员
+    """
+    try:
+        # 不允许修改自己的管理员状态
+        if request.user.id == user_id:
+            return Response({'error': '不能修改自己的管理员状态'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 查找目标用户
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # 获取新的管理员状态
+        is_staff = request.data.get('is_staff', False)
+        
+        # 更新用户状态
+        user.is_staff = is_staff
+        user.is_superuser = is_staff  # 同步更新超级管理员状态
+        user.save()
+        
+        logger.info(f"用户管理员状态已更新: user_id={user_id}, username={user.username}, is_staff={is_staff}, 操作者={request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': f"已{'设置' if is_staff else '取消'}用户 {user.username} 的管理员权限",
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'is_staff': user.is_staff,
+            }
+        })
+    except Exception as e:
+        logger.error(f"设置用户管理员状态失败: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

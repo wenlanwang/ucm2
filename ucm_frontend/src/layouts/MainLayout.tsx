@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Avatar, Button, message } from 'antd';
-import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, SettingOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, HomeOutlined, FormOutlined, SettingOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/useAuthStore';
 
 const { Header, Sider, Content } = Layout;
@@ -36,7 +36,8 @@ export default function MainLayout() {
     },
   ];
 
-  const menuItems = [
+  // 基础菜单项（所有用户可见）
+  const baseMenuItems = [
     {
       key: '/',
       icon: <HomeOutlined />,
@@ -57,41 +58,54 @@ export default function MainLayout() {
         },
       ],
     },
-    {
-      key: 'admin',
-      icon: <SettingOutlined />,
-      label: '后台管理',
-      children: [
-        {
-          key: '/admin/manufacturers',
-          label: '厂商版本管理',
-        },
-        {
-          key: '/admin/column-options',
-          label: '列可选值管理',
-        },
-        {
-          key: '/admin/inventory',
-          label: '设备清单管理',
-        },
-        {
-          key: '/admin/templates',
-          label: '模板配置管理',
-        },
-        {
-          key: '/admin/deadline-settings',
-          label: '登记截止设置',
-          icon: <ClockCircleOutlined />,
-        },
-      ],
-    },
   ];
+
+  // 管理员菜单项（仅管理员可见）
+  const adminMenuItems = {
+    key: 'admin',
+    icon: <SettingOutlined />,
+    label: '后台管理',
+    children: [
+      {
+        key: '/admin/users',
+        label: '用户管理',
+        icon: <TeamOutlined />,
+      },
+      {
+        key: '/admin/manufacturers',
+        label: '厂商版本管理',
+      },
+      {
+        key: '/admin/column-options',
+        label: '列可选值管理',
+      },
+      {
+        key: '/admin/inventory',
+        label: '设备清单管理',
+      },
+      {
+        key: '/admin/templates',
+        label: '模板配置管理',
+      },
+      {
+        key: '/admin/deadline-settings',
+        label: '登记截止设置',
+        icon: <ClockCircleOutlined />,
+      },
+    ],
+  };
+
+  // 根据用户权限过滤菜单
+  const menuItems = user?.is_staff
+    ? [...baseMenuItems, adminMenuItems]
+    : baseMenuItems;
 
   const getSelectedKeys = () => {
     const path = location.pathname;
     if (path === '/') return ['/'];
     if (path.startsWith('/requirements/register')) return ['/requirements/register'];
     if (path.startsWith('/requirements/list')) return ['/requirements/list'];
+    if (path.startsWith('/admin/users')) return ['/admin/users'];
     if (path.startsWith('/admin/manufacturers')) return ['/admin/manufacturers'];
     if (path.startsWith('/admin/column-options')) return ['/admin/column-options'];
     if (path.startsWith('/admin/inventory')) return ['/admin/inventory'];
