@@ -46,7 +46,7 @@ const isWaitNotificationColumn = (columnName: string): boolean => {
 
 export default function RequirementRegister({ embedMode }: { embedMode?: boolean }) {
   const navigate = useNavigate();
-  const { } = useAuthStore();
+  const { user } = useAuthStore();
 
   // 嵌入模式下的导航路径
   const getNavPath = (path: string) => embedMode ? `/embed${path}` : path;
