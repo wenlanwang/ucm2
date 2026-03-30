@@ -421,10 +421,7 @@ export default function RequirementRegister({ embedMode }: { embedMode?: boolean
   const handleTabChange = (key: string) => {
     setActiveTab(key as 'import' | 'modify' | 'delete' | 'delete_then_add');
     setTableData([]);
-
-    // 重新自动选择日期
-    const autoSelectedDate = selectNearestAvailableDate(availableDates);
-    setUcmChangeDate(autoSelectedDate);
+    // 不再重置日期，保持用户选择的值
   };
   
   const handleAddRow = useCallback(() => {
@@ -1340,8 +1337,8 @@ export default function RequirementRegister({ embedMode }: { embedMode?: boolean
                 loading={submitting}
                 disabled={!isAllValid || !ucmChangeDate || tableData.length === 0}
                 style={{
-                  backgroundColor: (!isAllValid || !ucmChangeDate || tableData.length === 0) ? '#d9d9d9' : '#52c41a',
-                  borderColor: (!isAllValid || !ucmChangeDate || tableData.length === 0) ? '#d9d9d9' : '#52c41a',
+                  backgroundColor: (!isAllValid || !ucmChangeDate || tableData.length === 0) ? '#d9d9d9' : '#1890ff',
+                  borderColor: (!isAllValid || !ucmChangeDate || tableData.length === 0) ? '#d9d9d9' : '#1890ff',
                   color: 'white'
                 }}
               >

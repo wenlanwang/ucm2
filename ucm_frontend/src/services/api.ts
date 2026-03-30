@@ -84,10 +84,12 @@ export const ssoLogout = async (): Promise<{ success: boolean }> => {
 export interface DashboardStatistics {
   wednesday: {
     date: string;
+    date_iso: string;
     count: number;
   };
   saturday: {
     date: string;
+    date_iso: string;
     count: number;
   };
   total: number;
