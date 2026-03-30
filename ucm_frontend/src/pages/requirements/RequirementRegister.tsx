@@ -7,7 +7,6 @@ import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
-import { useAuthStore } from '../../store/useAuthStore';
 import EditableCell from '../../components/EditableCell';
 import EmbedNavigation from '../../components/EmbedNavigation';
 
@@ -46,7 +45,6 @@ const isWaitNotificationColumn = (columnName: string): boolean => {
 
 export default function RequirementRegister({ embedMode }: { embedMode?: boolean }) {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
 
   // 嵌入模式下的导航路径
   const getNavPath = (path: string) => embedMode ? `/embed${path}` : path;

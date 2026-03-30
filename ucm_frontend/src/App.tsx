@@ -55,7 +55,7 @@ function EmbedLayout() {
   if (!isAuthenticated) {
     return (
       <Result
-        status="401"
+        status="403"
         title="未登录"
         subTitle="请通过父网站访问此页面"
       />

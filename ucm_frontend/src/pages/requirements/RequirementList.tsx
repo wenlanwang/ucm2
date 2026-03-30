@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip, Divider } from 'antd';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip } from 'antd';
 import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, BellOutlined, NotificationOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
@@ -353,20 +353,6 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
       setColumnOptions(options);
     } catch (error) {
       console.error('加载校验数据失败:', error);
-    }
-  };
-
-  
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.delete(`/requirements/${id}/`);
-      message.success('删除成功');
-      setData(prevData => prevData.filter(item => item.id !== id));
-      // 重新加载统计
-      if (selectedDate) loadDateStatistics(selectedDate);
-    } catch (error) {
-      message.error('删除失败');
     }
   };
 
