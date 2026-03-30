@@ -2164,9 +2164,8 @@ def sso_verify_session(request):
     
     logger.info(f"SSO 登录成功: userid={user_info.userid}, username={user_info.username}")
     
-    # 重定向到前端首页
-    from django.conf import settings
-    frontend_url = getattr(settings, 'APP_BASE_URL', 'http://localhost:5173')
+    # 重定向到前端首页（动态获取当前主机地址）
+    frontend_url = f"{request.scheme}://{request.get_host()}/"
     return redirect(frontend_url)
 
 

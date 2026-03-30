@@ -11,6 +11,30 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import socket
+
+
+# ========== 环境检测 ==========
+
+def get_server_ip():
+    """获取服务器IP地址"""
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
+def is_production():
+    """
+    判断是否生产环境
+    规则：IP以 76、84、80 开头为生产环境
+    """
+    ip = get_server_ip()
+    production_prefixes = ['76.', '84.', '80.']
+    return any(ip.startswith(prefix) for prefix in production_prefixes)
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -189,7 +213,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ========== SSO 单点登录配置 ==========
 
 # SSO 模式切换：True=Mock模式(测试环境), False=生产模式
-SSO_USE_MOCK = True
+# 自动根据服务器IP判断：IP以76/84/80开头为生产环境，使用真实SSO；否则为测试环境，使用Mock
+SSO_USE_MOCK = not is_production()
 
 # SSO 服务器地址
 SSO_BASE_URL = 'https://sso.netm.icbc'  # 生产环境 SSO 地址
