@@ -42,9 +42,22 @@ export default function Dashboard({ embedMode }: DashboardProps) {
       
       <Row gutter={16}>
         <Col span={8}>
-          <Card loading={loading}>
+          <Card 
+            loading={loading}
+            hoverable
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              if (stats?.wednesday.date_iso) {
+                navigate(`${getNavPath('/requirements/list')}?ucm_change_date=${stats.wednesday.date_iso}`);
+              }
+            }}
+          >
             <Statistic
-              title={`本周三（${stats?.wednesday.date || ''}）`}
+              title={
+                <span style={{ color: '#333', fontWeight: 500 }}>
+                  本周三（{stats?.wednesday.date || ''}）
+                </span>
+              }
               value={stats?.wednesday.count ?? 0}
               suffix="条需求"
               prefix={<CalendarOutlined style={{ color: '#1890ff' }} />}
@@ -54,9 +67,22 @@ export default function Dashboard({ embedMode }: DashboardProps) {
         </Col>
         
         <Col span={8}>
-          <Card loading={loading}>
+          <Card 
+            loading={loading}
+            hoverable
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              if (stats?.saturday.date_iso) {
+                navigate(`${getNavPath('/requirements/list')}?ucm_change_date=${stats.saturday.date_iso}`);
+              }
+            }}
+          >
             <Statistic
-              title={`本周六（${stats?.saturday.date || ''}）`}
+              title={
+                <span style={{ color: '#333', fontWeight: 500 }}>
+                  本周六（{stats?.saturday.date || ''}）
+                </span>
+              }
               value={stats?.saturday.count ?? 0}
               suffix="条需求"
               prefix={<CalendarOutlined style={{ color: '#52c41a' }} />}
@@ -68,7 +94,11 @@ export default function Dashboard({ embedMode }: DashboardProps) {
         <Col span={8}>
           <Card loading={loading}>
             <Statistic
-              title="累计登记"
+              title={
+                <span style={{ color: '#333', fontWeight: 500 }}>
+                  累计登记
+                </span>
+              }
               value={stats?.total ?? 0}
               suffix="条需求"
               prefix={<AppstoreOutlined style={{ color: '#722ed1' }} />}

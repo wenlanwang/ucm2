@@ -829,17 +829,39 @@ class UCMRequirementViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'])
     def batch_delete(self, request):
-        """批量删除需求"""
+        """批量删除需求（仅允许删除本人登记的需求，管理员不受限制）"""
         requirement_ids = request.data.get('requirement_ids', [])
         if not requirement_ids:
             return Response({'error': '请选择要删除的记录'},
                           status=status.HTTP_400_BAD_REQUEST)
 
-        count, _ = UCMRequirement.objects.filter(
-            id__in=requirement_ids
-        ).delete()
+        # 获取要删除的需求
+        requirements = UCMRequirement.objects.filter(id__in=requirement_ids)
+        
+        # 权限检查：区分有权限和无权限的需求
+        is_admin = request.user.is_staff
+        allowed_ids = []
+        forbidden_items = []
+        
+        for req in requirements:
+            if is_admin or req.submitter == request.user:
+                allowed_ids.append(req.id)
+            else:
+                forbidden_items.append({
+                    'id': req.id,
+                    'title': req.title or f'需求#{req.id}'
+                })
+        
+        # 执行删除
+        count = 0
+        if allowed_ids:
+            count, _ = UCMRequirement.objects.filter(id__in=allowed_ids).delete()
 
-        return Response({'success': True, 'count': count})
+        return Response({
+            'success': True, 
+            'count': count,
+            'forbidden': forbidden_items
+        })
     
     @action(detail=False, methods=['post'])
     def submit_delete_then_add(self, request):
@@ -2334,14 +2356,14 @@ def dashboard_statistics(request):
     wednesday = today - timedelta(days=days_since_monday - 2)
     saturday = today - timedelta(days=days_since_monday - 5)
     
-    # 统计本周三登记数量
+    # 统计本周三UCM变更日期的需求总数（含新增、修改、删除类型）
     wed_count = UCMRequirement.objects.filter(
-        submit_time__date=wednesday
+        ucm_change_date=wednesday
     ).count()
     
-    # 统计本周六登记数量
+    # 统计本周六UCM变更日期的需求总数（含新增、修改、删除类型）
     sat_count = UCMRequirement.objects.filter(
-        submit_time__date=saturday
+        ucm_change_date=saturday
     ).count()
     
     # 累计总数
@@ -2350,10 +2372,12 @@ def dashboard_statistics(request):
     return Response({
         'wednesday': {
             'date': wednesday.strftime('%Y年%m月%d日'),
+            'date_iso': wednesday.strftime('%Y-%m-%d'),
             'count': wed_count
         },
         'saturday': {
             'date': saturday.strftime('%Y年%m月%d日'),
+            'date_iso': saturday.strftime('%Y-%m-%d'),
             'count': sat_count
         },
         'total': total_count

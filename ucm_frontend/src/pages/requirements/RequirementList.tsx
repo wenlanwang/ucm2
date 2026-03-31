@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip, Divider } from 'antd';
+import { Card, Table, Button, message, Space, Tag, Popconfirm, Input, DatePicker, Modal, Form, Tooltip } from 'antd';
 import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, BellOutlined, NotificationOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import api from '../../services/api';
@@ -62,6 +62,7 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
   dayjs.locale('zh-cn');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // 嵌入模式下的导航路径
   const getNavPath = (path: string) => embedMode ? `/embed${path}` : path;
@@ -355,20 +356,6 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
     }
   };
 
-  
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.delete(`/requirements/${id}/`);
-      message.success('删除成功');
-      setData(prevData => prevData.filter(item => item.id !== id));
-      // 重新加载统计
-      if (selectedDate) loadDateStatistics(selectedDate);
-    } catch (error) {
-      message.error('删除失败');
-    }
-  };
-
   const handleComplete = async (id: number) => {
     try {
       await api.post(`/requirements/${id}/mark_as_processed/`);
@@ -392,6 +379,8 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
       await api.post(`/requirements/${id}/mark_notification_received/`);
       message.success('已标记收到通知');
       loadData();
+      // 刷新通知分组列表
+      loadNotificationGroups();
       // 重新加载统计
       if (selectedDate) loadDateStatistics(selectedDate);
     } catch (error) {
@@ -623,12 +612,22 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
     }
 
     try {
-      await api.post('/requirements/batch_delete/', {
+      const response = await api.post('/requirements/batch_delete/', {
         requirement_ids: selectedRowKeys
       });
-      message.success('批量删除成功');
+      
+      // 处理删除结果
+      const { count, forbidden } = response.data;
+      if (forbidden && forbidden.length > 0) {
+        message.warning(`成功删除 ${count} 条，跳过 ${forbidden.length} 条无权限的需求`);
+      } else {
+        message.success(`批量删除成功，共删除 ${count} 条`);
+      }
+      
       setSelectedRowKeys([]);
       setData(prevData => prevData.filter(item => !selectedRowKeys.includes(item.id)));
+      // 刷新通知分组列表
+      loadNotificationGroups();
       // 重新加载统计
       if (selectedDate) loadDateStatistics(selectedDate);
     } catch (error) {
@@ -1034,6 +1033,9 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
   // 计算当前选中类型的总数
   const totalCount = currentStats[selectedType]?.count || 0;
 
+  // 计算所有类型的总数
+  const totalAllCount = (currentStats.import?.count || 0) + (currentStats.modify?.count || 0) + (currentStats.delete?.count || 0);
+
   // 筛选逻辑
   const filteredData = data.filter(item => {
     // 需求人筛选
@@ -1096,7 +1098,7 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
             fontSize: 13, 
             color: '#666' 
           }}>
-            当前选中：{dayjs(selectedDate).format('YYYY-MM-DD（ddd）')} - {requirementTypeText[selectedType]}类型 - 共{totalCount}条需求
+            共{totalAllCount}条需求，当前选中：{dayjs(selectedDate).format('YYYY-MM-DD（ddd）')} - {requirementTypeText[selectedType]}类型（{totalCount}条）
           </span>
         )}
       </div>
@@ -1113,7 +1115,12 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
                 value={selectedDate ? dayjs(selectedDate) : null}
                 onChange={(date) => {
                   if (date) {
-                    setSelectedDate(date.format('YYYY-MM-DD'));
+                    const newDate = date.format('YYYY-MM-DD');
+                    setSelectedDate(newDate);
+                    // 同步更新URL参数（使用replace模式，不产生历史记录）
+                    const newSearchParams = new URLSearchParams(searchParams);
+                    newSearchParams.set('ucm_change_date', newDate);
+                    navigate(`${location.pathname}?${newSearchParams.toString()}`, { replace: true });
                   }
                 }}
                 disabledDate={(date) => {
@@ -1146,7 +1153,15 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
                 return (
                   <div
                     key={type}
-                    onClick={() => !isDisabled && setSelectedType(type)}
+                    onClick={() => {
+                      if (!isDisabled) {
+                        setSelectedType(type);
+                        // 同步更新URL参数（使用replace模式，不产生历史记录）
+                        const newSearchParams = new URLSearchParams(searchParams);
+                        newSearchParams.set('requirement_type', type);
+                        navigate(`${location.pathname}?${newSearchParams.toString()}`, { replace: true });
+                      }
+                    }}
                     style={{
                       padding: '4px 8px',
                       minWidth: '80px',
@@ -1207,14 +1222,20 @@ export default function RequirementList({ embedMode }: { embedMode?: boolean }) 
             >
               批量完成
             </Button>
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              onClick={handleBatchDelete}
-              disabled={selectedRowKeys.length === 0}
+            <Popconfirm
+              title="是否确认删除？"
+              onConfirm={handleBatchDelete}
+              okText="确认"
+              cancelText="取消"
             >
-              批量删除
-            </Button>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                disabled={selectedRowKeys.length === 0}
+              >
+                批量删除
+              </Button>
+            </Popconfirm>
           </Space>
         </div>
 

@@ -195,7 +195,7 @@ SSO_USE_MOCK = True
 SSO_BASE_URL = 'https://sso.netm.icbc'  # 生产环境 SSO 地址
 
 # Mock SSO 地址（指向 create 项目的 mock-sso 服务）
-SSO_MOCK_URL = 'http://localhost:8000/mock-sso'
+SSO_MOCK_URL = 'http://localhost:9000/mock-sso'
 
 # 应用前端地址（用于 SSO 回调）
 APP_BASE_URL = 'http://127.0.0.1:5173'
